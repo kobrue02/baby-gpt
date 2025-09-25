@@ -92,7 +92,7 @@ def load_config():
         "always_save_checkpoint": True,
         "init_from": "scratch",
         # Logging
-        "wandb_log": False,
+        "wandb_log": True,
         "wandb_project": device_config["wandb_project"],
         "wandb_run_name": device_config["wandb_run_name"],
         # Training hyperparameters
@@ -100,8 +100,8 @@ def load_config():
         "batch_size": batch_size,
         "block_size": block_size,
         # Model architecture
-        "n_layer": 4,
-        "n_head": 8,
+        "n_layer": 8,
+        "n_head": 16,
         "n_embd": 512,
         "dropout": 0.0,
         "bias": True,
