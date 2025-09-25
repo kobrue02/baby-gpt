@@ -124,7 +124,7 @@ class SFTTrainer(Trainer):
             vocab_size=model_config.get('vocab_size', 50304)
         )
         self.meta_vocab_size = model_config.get("vocab_size")
-        print("meta_vocab_size =", self.meta_vocab_size)
+        print("meta_vocab_size =", self.meta_vocab_size, 50304)
         gptconf = GPTConfig(**model_args)
         model = GPTWithMHA(gptconf)
 
