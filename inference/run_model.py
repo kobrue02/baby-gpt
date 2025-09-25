@@ -9,9 +9,8 @@ import tiktoken
 
 from contextlib import nullcontext
 
-from training.components.transformer import GPTWithMHA
-from training.components.blocks import GPTConfig
-from training.configurator import load_config
+from training.pretraining.components.transformer import GPTWithMHA
+from training.configurator import load_config, GPTConfig
 
 # -----------------------------------------------------------------------------
 # Parse command line arguments

@@ -4,24 +4,24 @@ Uses multi-head attention with the MHA class from attn.py instead of CausalSelfA
 And uses the PackedSwiGLUFFN activation from act.py, instead of the standard GELU.
 """
 
-import inspect
 import torch
 import math
 
-from dataclasses import dataclass
 from torch import nn, Tensor
 from torch.nn import functional as F
 
 from jaxtyping import Float, jaxtyped, Int64
 from beartype import beartype as typechecker
 
-from data.preprocessing import enc
-from training.components.blocks import Block, LayerNorm
+from data.utils import enc
+from training.configurator import GPTConfig
+from training.classes.transformer import Transformer
+from training.pretraining.components.blocks import Block, LayerNorm
 
 
-class GPTWithMHA(nn.Module):
+class GPTWithMHA(Transformer):
     """ the full GPT language model, with a context size of block_size """
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig):
         super().__init__()
         assert config.vocab_size is not None
         assert config.block_size is not None

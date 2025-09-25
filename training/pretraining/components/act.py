@@ -1,8 +1,9 @@
-""" Implementation of the SwiGLU feedforward network with custom hidden dimension scaling. """
+"""Implementation of the SwiGLU feedforward network with custom hidden dimension scaling."""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 
 class PackedSwiGLUFFN(nn.Module):
     def __init__(

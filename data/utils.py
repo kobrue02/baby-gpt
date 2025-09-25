@@ -1,0 +1,167 @@
+"""
+Credits to Karpathy's nanoGPT repo for much of this code.
+"""
+
+# saves a dataset to a binary file for training. following was helpful:
+# https://github.com/HazyResearch/flash-attention/blob/main/training/src/datamodules/language_modeling_hf.py
+
+import os
+import numpy as np
+import tiktoken
+from tqdm import tqdm
+from string import punctuation
+
+
+enc = tiktoken.get_encoding("gpt2")
+# number of workers in .map() call
+# good number to use is ~order number of cpu cores // 2
+num_proc = 8
+# number of workers in load_dataset() call
+# best number might be different from num_proc above as it also depends on NW speed.
+# it is better than 1 usually though
+num_proc_load_dataset = num_proc
+
+
+def clean_text(text):
+    """ Clean the input text by removing unwanted characters and formatting. """
+    text = text.replace('\n', ' ') # make all newlines spaces
+    text = ' '.join(text.split()) # make all whitespace single spaces
+    text = text.strip() # remove leading/trailing whitespace
+    text = text.lower() # make all lowercase
+    text = text.translate(
+        str.maketrans('', '', ''.join(
+            [c for c in punctuation if c not in ["'", ".", ",", "!", "?"]])
+    )) # remove most punctuation except some common ones
+    return text
+
+def process(example):
+    """
+    Take a text example and encode to ids using tiktoken GPT-2 BPE.
+    """
+    text = example['text']
+    text = clean_text(text)
+    # encode
+    ids = enc.encode_ordinary(text) # encode_ordinary ignores any special tokens
+    ids.append(enc.eot_token) # add the end of text token, e.g. 50256 for gpt2 bpe
+    # note: I think eot should be prepended not appended... hmm. it's called "eot" though...
+    out = {'ids': ids, 'len': len(ids)}
+    return out
+
+def process_sft(examples):
+    """
+    Take examples with 'Question' and 'Answer' fields and encode to ids using tiktoken GPT-2 BPE.
+    Works with batched processing to avoid serialization issues.
+    """
+    # Handle both single example and batch
+    if isinstance(examples['Question'], str):
+        # Single example
+        questions = [examples['Question']]
+        answers = [examples['Answer']]
+    else:
+        # Batch
+        questions = examples['Question']
+        answers = examples['Answer']
+
+    all_ids = []
+    all_masks = []
+    all_lens = []
+
+    for q, a in zip(questions, answers):
+        q = clean_text(q)
+        a = clean_text(a)
+        q_ids = enc.encode_ordinary(q + "\n")   # include the separator
+        a_ids = enc.encode_ordinary(a)
+        ids = q_ids + a_ids
+        ids.append(enc.eot_token)
+
+        # 1 for assistant tokens, 0 for user tokens
+        mask = [0] * len(q_ids) + [1] * (len(a_ids) + 1)  # +1 for eot if you want loss on eot
+
+        all_ids.append(ids)
+        all_masks.append(mask)
+        all_lens.append(len(ids))
+
+    # Return in the format expected by datasets
+    if isinstance(examples['Question'], str):
+        # Single example - return single values
+        return {
+            'ids': all_ids[0],
+            'mask': all_masks[0],
+            'len': all_lens[0]
+        }
+    else:
+        # Batch - return lists
+        return {
+            'ids': all_ids,
+            'mask': all_masks,
+            'len': all_lens
+        }
+
+def memmap(split, dset, dtype, suffix=''):
+    """
+    Take a tokenized dataset and save to binary files.
+    """
+    arr_len = np.sum(dset['len'], dtype=np.uint64) # type: ignore
+    if suffix == '':
+        filename = os.path.join(os.path.dirname(__file__), f'{split}.bin')
+    else:
+        filename = os.path.join(os.path.dirname(__file__), f'{split}_{suffix}.bin')
+    arr = np.memmap(filename, dtype=dtype, mode='w+', shape=(arr_len,)) # type: ignore
+    total_batches = min(1024, len(dset))
+    idx = 0
+    for batch_idx in tqdm(range(total_batches), desc=f'writing {filename}'):
+        # Batch together samples for faster write
+        batch = dset.shard(num_shards=total_batches, index=batch_idx, contiguous=True).with_format('numpy')
+        arr_batch = np.concatenate(batch['ids']) # type: ignore
+        # Write into mmap
+        arr[idx : idx + len(arr_batch)] = arr_batch
+        idx += len(arr_batch)
+    assert idx == arr_len
+    return arr
+
+def memmap_sft(split, dset, dtype, suffix='sft'):
+    """
+    Take a tokenized dataset and save to binary files for tokens and masks.
+    """
+    arr_len = np.sum(dset['len'], dtype=np.uint64)
+    token_file = os.path.join(os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}.bin')
+    mask_file  = os.path.join(os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin')
+
+    tokens = np.memmap(token_file, dtype=dtype, mode='w+', shape=(arr_len,)) # type: ignore
+    masks  = np.memmap(mask_file, dtype=np.uint8, mode='w+', shape=(arr_len,)) # type: ignore
+
+    total_batches = min(1024, len(dset))
+    idx = 0
+    for batch_idx in tqdm(range(total_batches), desc=f'writing {token_file}'):
+        batch = dset.shard(num_shards=total_batches, index=batch_idx, contiguous=True).with_format('numpy')
+        ids_batch = np.concatenate(batch['ids'])
+        mask_batch = np.concatenate(batch['mask'])
+        tokens[idx:idx+len(ids_batch)] = ids_batch
+        masks[idx:idx+len(mask_batch)] = mask_batch
+        idx += len(ids_batch)
+
+    assert idx == arr_len
+    return tokens, masks
+
+
+def to_bins(tokenized, suffix='', is_sft=False):
+    """
+    Take a tokenized dataset and save to binary files.
+    """
+    dtype = np.uint16 # (can do since enc.max_token_value == 50256 is < 2**16)
+
+    # Auto-detect SFT format if not explicitly specified
+    if not is_sft and suffix == 'sft':
+        is_sft = True
+
+    for split, dset in tokenized.items(): # type: ignore
+        if is_sft:
+            tokens, masks = memmap_sft(split, dset, dtype, suffix)
+            masks.flush()
+        else:
+            tokens = memmap(split, dset, dtype, suffix)
+        # flush to disk
+        tokens.flush()
+
+
+    
