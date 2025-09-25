@@ -123,7 +123,8 @@ class SFTTrainer(Trainer):
             dropout=0.0,  # Set to 0 for inference
             vocab_size=model_config.get('vocab_size', 50304)
         )
-
+        self.meta_vocab_size = model_config.get("vocab_size")
+        print("meta_vocab_size =", self.meta_vocab_size)
         gptconf = GPTConfig(**model_args)
         model = GPTWithMHA(gptconf)
 
