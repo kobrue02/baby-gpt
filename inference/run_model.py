@@ -41,16 +41,9 @@ top_k = args.top_k
 seed = args.seed
 compile_model = args.compile
 
-# Device detection with MPS support
-if torch.cuda.is_available():
-    device = 'cuda'
-    dtype = 'bfloat16' if torch.cuda.is_bf16_supported() else 'float16'
-elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-    device = 'mps'
-    dtype = 'float32'  # MPS doesn't support bfloat16 well
-else:
-    device = 'cpu'
-    dtype = 'float32'
+# Use device and dtype from config
+device = config['device']
+dtype = config['dtype']
 # -----------------------------------------------------------------------------
 
 torch.manual_seed(seed)

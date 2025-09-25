@@ -19,7 +19,7 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-    device: str | None = "mps" # 'cpu', 'cuda', 'mps', or None for default
+    device: str | None = None # 'cpu', 'cuda', 'mps', or None for default
     attn_pdrop: float = 0.0 # attention dropout
     
 
