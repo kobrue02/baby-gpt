@@ -48,14 +48,14 @@ dtype = config['dtype']
 
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
-torch.backends.cuda.matmul.fp32_precision = 'tf32' # use tf32 for matmul
-torch.backends.cudnn.conv.fp32_precision = 'tf32' # use tf32 for cudnn # type: ignore
+#torch.backends.cuda.matmul.fp32_precision = 'tf32' # use tf32 for matmul
+#torch.backends.cudnn.conv.fp32_precision = 'tf32' # use tf32 for cudnn # type: ignore
 device_type = 'cuda' if 'cuda' in device else 'mps' if 'mps' in device else 'cpu'
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-ctx = nullcontext() if device_type in ['cpu', 'mps'] else torch.amp.autocast(device_type=device_type, dtype=ptdtype) # type: ignore
+ctx = nullcontext() if device_type in ['cpu', 'mps'] else torch.cuda.amp.autocast(dtype=ptdtype) # type: ignore
 
 # model
-def load_model(out_dir, device, compile_model=True):
+def load_model(out_dir, device, compile_model=False):
     # init from a model saved in a specific directory
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
     checkpoint = torch.load(ckpt_path, map_location=device)

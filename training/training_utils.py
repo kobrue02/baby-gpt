@@ -81,12 +81,12 @@ class Trainer:
         if self.config["master_process"]:
             os.makedirs(self.config["out_dir"], exist_ok=True)
         torch.manual_seed(1337 + self.config["seed_offset"])
-        torch.backends.cuda.matmul.fp32_precision = 'tf32' # use tf32 for matmul
-        torch.backends.cudnn.conv.fp32_precision = 'tf32' # type: ignore
+        # torch.backends.cuda.matmul.fp32_precision = 'tf32' # use tf32 for matmul
+        # torch.backends.cudnn.conv.fp32_precision = 'tf32' # type: ignore
         device_type = self.config["device"]
         # note: float16 data type will automatically use a GradScaler
         ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[self.config["dtype"]]
-        ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) # type: ignore
+        ctx = torch.cuda.amp.autocast(dtype=ptdtype) # type: ignore
         return device_type, ptdtype, ctx
     
     def find_unseen_batch(self, data: np.memmap):
@@ -183,7 +183,7 @@ class Trainer:
 
     def init_optimizer_and_scaler(self):
         """ Initialize the optimizer and gradient scaler. """
-        scaler = torch.amp.GradScaler(device=self.device_type, enabled=(self.config['dtype'] == 'float16')) # type: ignore
+        scaler = torch.cuda.amp.GradScaler(enabled=(self.config['dtype'] == 'float16')) # type: ignore
         optimizer = self.model.configure_optimizers(
             self.config['weight_decay'],
             self.config['learning_rate'],

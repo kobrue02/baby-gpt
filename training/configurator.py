@@ -8,10 +8,10 @@ def get_device_config():
     if torch.cuda.is_available():
         return {
             'device': 'cuda',
-            'dtype': 'bfloat16',
-            'compile': True,
+            'dtype': 'float16',
+            'compile': False,
             'gradient_accumulation_steps': 8,
-            'batch_size': 4,
+            'batch_size': 8,
             'block_size': 1024,
             'wandb_project': 'baby-gpt-cuda',
             'wandb_run_name': 'baby-gpt-cuda-run'
