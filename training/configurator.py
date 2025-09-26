@@ -166,8 +166,8 @@ def load_sft_config():
         "block_size": block_size,
 
         # Model architecture (match pretrained checkpoint)
-        "n_layer": 4,
-        "n_head": 8,
+        "n_layer": 8,
+        "n_head": 16,
         "n_embd": 512,
         "dropout": 0.0,
         "bias": True,
