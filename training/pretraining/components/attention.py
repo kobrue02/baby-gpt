@@ -177,7 +177,10 @@ class CausalSelfAttention(nn.Module):
         else:
             # manual implementation of attention
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf')) # type: ignore
+            att = att.masked_fill(
+                self.bias[:, :, :T, :T].to(att.device) == 0,  # type: ignore # ensure same device
+                float('-inf')
+            )
             att = F.softmax(att, dim=-1)
             att = self.attn_dropout(att)
             y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
