@@ -22,7 +22,7 @@ def scaled_dot_product_attention(
     scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
     if is_causal:
-        assert attn_mask is None
+        assert attn_mask is None, "You cannot supply an attention mask and also set causal=True"
         temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
         attn_bias.masked_fill_(temp_mask.to(attn_bias.device).logical_not(), float("-inf"))
         attn_bias.to(query.dtype)

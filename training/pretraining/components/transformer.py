@@ -17,6 +17,7 @@ from data.utils import enc
 from training.configurator import GPTConfig
 from training.classes.transformer import Transformer
 from training.pretraining.components.blocks import Block, LayerNorm
+from training.pretraining.components.muon_optim import MuonEnhanced
 
 
 import torch
@@ -189,7 +190,8 @@ class GPTWithMHA(Transformer):
         print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
         # Create AdamW optimizer and use the fused version if it is available
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
+        # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
+        optimizer = MuonEnhanced(optim_groups, lr=learning_rate, beta1=betas[0], beta2=betas[1], device=device_type)
 
         return optimizer
 
