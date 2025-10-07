@@ -116,7 +116,7 @@ def load_config():
         "decay_lr": True,
         "warmup_iters": 500,
         "lr_decay_iters": 5000,
-        "min_lr": 3e-5,
+        "min_lr": 0.1,
         # Device settings
         "device": device_config["device"],
         "dtype": device_config["dtype"],
