@@ -26,7 +26,7 @@ def load_finepdfs(n_rows):
     # Login using e.g. `huggingface-cli login` to access this dataset
     #streamed = load_dataset("HuggingFaceFW/finepdfs", "eng_Latn", streaming=True, split="train")
     #ds = streamed_dataset_to_split(streamed, n_rows=n_rows, test_size=0.2)  # use a small subset for testing
-    ds = load_dataset("roneneldan/TinyStories")
+    ds = load_dataset("EssentialAI/eai-taxonomy-stem-w-dclm")
     # map this to a Dataset of this shape:
     # DatasetDict({
     #     train: Dataset({
@@ -40,10 +40,14 @@ def load_finepdfs(n_rows):
     # })
 
     ds = ds.remove_columns([col for col in ds['train'].column_names if col != 'text']) # type: ignore
-    try: 
+    if len(ds) == 1:  # type:ignore # if there's no predefined split
+        ds = ds["train"].train_test_split(test_size=0.001, seed=42)  # type: ignore
         ds["val"] = ds.pop("test")  # type: ignore
-    except KeyError:
-        ds["val"] = ds.pop("validation")
+    else:
+        try: 
+            ds["val"] = ds.pop("test")  # type: ignore
+        except KeyError:
+            ds["val"] = ds.pop("validation") # type: ignore
     print(ds)  # should show Dataset with 1000 rows
     return ds
 

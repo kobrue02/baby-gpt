@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-from training.pretraining.components.attn import MultiHeadAttention
-from training.pretraining.components.act import PackedSwiGLUFFN
+from training.pretraining.components.attention import MultiHeadAttention
+from training.pretraining.components.activations import PackedSwiGLUFFN
 from training.configurator import GPTConfig
 
 from dataclasses import dataclass
@@ -71,7 +71,6 @@ class Block(nn.Module):
     def forward(
         self, x: Float[Tensor, "batch_size sequence_length n_embd"]
     ) -> Float[Tensor, "batch_size sequence_length n_embd"]:
-        q, k, v = self.ln_1(x), self.ln_1(x), self.ln_1(x)
-        x = x + self.attn(q, k, v, is_causal=True)
+        x = x + self.attn( self.ln_1(x), is_causal=True)
         x = x + self.mlp(self.ln_2(x))
         return x

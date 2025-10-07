@@ -21,7 +21,7 @@ def create_pretraining_dataset(n_rows=1000000):
     tokenized = split_dataset.map(
         process,
         remove_columns=['text'],
-        desc="Processing pretraining examples"
+        desc="Processing pretraining examples" # type: ignore
     )
 
     print("Saving tokenized dataset to binary files...")
