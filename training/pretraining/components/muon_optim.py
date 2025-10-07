@@ -50,7 +50,7 @@ def muon_update(
         p.mul_(1-lr*wd)
 
     # Orthonormalize gradient and update momentum in orthonormal space
-    grad_orthonorm = zeropower_via_newtonschulz5(grad, use_bf16)
+    grad_orthonorm = newtonschulz5(grad, use_bf16)
     momentum.lerp_(grad_orthonorm, 1-beta2)
 
     if nesterov:
