@@ -20,11 +20,18 @@ def create_pretraining_dataset(n_shards=10):
     dataset_key = "EssentialAI/eai-taxonomy-stem-w-dclm"
     print(f"Loading first {n_shards} shards from {dataset_key} dataset...")
 
-    # Load only the first n_shards by using data_files parameter
-    # The dataset uses parquet files named like "data/train-00000-of-09987.parquet"
-    shard_files = [f"data/train-{i:05d}-of-09987.parquet" for i in range(n_shards)]
+    # Load dataset in streaming mode to get first n_shards worth of data
+    # Stream the dataset and take only what we need
+    ds = load_dataset(dataset_key, split="train", streaming=True)
 
-    ds = load_dataset(dataset_key, data_files=shard_files, split="train")
+    # Calculate approximate number of examples to take based on shard count
+    # Each shard has roughly similar number of examples
+    # We'll take the first portion of the dataset
+    ds_list = list(ds.take(n_shards * 10000))  # Adjust multiplier based on shard size
+
+    # Convert back to Dataset
+    from datasets import Dataset
+    ds = Dataset.from_list(ds_list)
 
     # Remove all columns except 'text'
     ds = ds.remove_columns([col for col in ds.column_names if col != 'text'])
