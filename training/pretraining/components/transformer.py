@@ -17,7 +17,7 @@ from data.utils import enc
 from training.configurator import GPTConfig
 from training.classes.transformer import Transformer
 from training.pretraining.components.blocks import Block, LayerNorm
-from training.pretraining.components.muon_optim import MuonEnhanced
+from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
 
 
 import torch
@@ -181,9 +181,15 @@ class GPTWithMHA(Transformer):
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
         decay_params = [p for _, p in param_dict.items() if p.dim() >= 2]
         nodecay_params = [p for _, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
+        #optim_groups = [
+        #    {'params': decay_params, 'weight_decay': weight_decay},
+        #    {'params': nodecay_params, 'weight_decay': 0.0}
+        #]
+        param_groups = [
+            dict(params=decay_params, use_muon=True,
+                lr=learning_rate, weight_decay=weight_decay),
+            dict(params=nodecay_params, use_muon=False,
+                lr=learning_rate, betas=betas, weight_decay=0.0),
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
@@ -191,8 +197,7 @@ class GPTWithMHA(Transformer):
         print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
         # Create AdamW optimizer and use the fused version if it is available
         # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
-        optimizer = MuonEnhanced(optim_groups, lr=learning_rate, beta1=betas[0], beta2=betas[1], device=device_type)
-
+        optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
         return optimizer
 
     # @jaxtyped(typechecker=typechecker)
