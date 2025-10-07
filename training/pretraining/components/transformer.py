@@ -74,15 +74,15 @@ class GPTWithMHA(Transformer):
         assert config.block_size is not None
         self.config = config
 
+        self.wte = nn.Embedding(config.vocab_size, config.n_embd)
+        self.wpe = nn.Embedding(config.block_size, config.n_embd)
         self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]), # n hidden layers
             ln_f = LayerNorm(config.n_embd, bias=config.bias), # final layer norm
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        self.transformer.wte.weight = self.lm_head.weight # type: ignore # https://paperswithcode.com/method/weight-tying
+        self.wte.weight = self.lm_head.weight # type: ignore # https://paperswithcode.com/method/weight-tying
 
         # init all weights
         self.apply(self._init_weights)
@@ -103,7 +103,7 @@ class GPTWithMHA(Transformer):
         """
         n_params = sum(p.numel() for p in self.parameters())
         if non_embedding:
-            n_params -= self.transformer.wpe.weight.numel() # type: ignore
+            n_params -= self.wpe.weight.numel() # type: ignore
         return n_params
 
     def _init_weights(self, module):
@@ -132,8 +132,8 @@ class GPTWithMHA(Transformer):
         pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
 
         # forward the GPT model itself
-        tok_emb = self.transformer.wte(idx) # type: ignore # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # type: ignore # position embeddings of shape (t, n_embd)
+        tok_emb = self.wte(idx) # token embeddings of shape (b, t, n_embd)
+        pos_emb = self.wpe(pos) # position embeddings of shape (t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb) # type: ignore
         for block in self.transformer.h: # type: ignore
             x = block(x)
@@ -177,24 +177,20 @@ class GPTWithMHA(Transformer):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         # filter out those that do not require grad
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
-        decay_params = [p for _, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for _, p in param_dict.items() if p.dim() < 2]
-        #optim_groups = [
-        #    {'params': decay_params, 'weight_decay': weight_decay},
-        #    {'params': nodecay_params, 'weight_decay': 0.0}
-        #]
+        # acc to muon paper
+        hidden_weights = [p for p in self.transformer.parameters() if p.ndim >= 2 and p.requires_grad]
+        hidden_gains_biases = [p for p in self.transformer.parameters() if p.ndim < 2 and p.requires_grad]
+        nonhidden_params = [*self.lm_head.parameters(), *self.wpe.parameters()]
+        nonhidden_params = [p for p in nonhidden_params if p.requires_grad]
+        
         param_groups = [
-            dict(params=decay_params, use_muon=True,
+            dict(params=hidden_weights, use_muon=True,
                 lr=learning_rate, weight_decay=weight_decay),
-            dict(params=nodecay_params, use_muon=False,
+            dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
                 lr=learning_rate, betas=betas, weight_decay=0.0),
         ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+        
+        print(f"training with {len(param_dict)} parameters")
         # Create AdamW optimizer and use the fused version if it is available
         # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
         optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
