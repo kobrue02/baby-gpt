@@ -96,11 +96,11 @@ class PreTrainer(Trainer):
         # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
         if split == "train":
             data = np.memmap(
-                os.path.join(data_dir, "train.bin"), dtype=np.uint16, mode="r"
+                os.path.join(data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
             )
         else:
             data = np.memmap(
-                os.path.join(data_dir, "val.bin"), dtype=np.uint16, mode="r"
+                os.path.join(data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
             )
 
         ix = self.find_unseen_batch(data)
