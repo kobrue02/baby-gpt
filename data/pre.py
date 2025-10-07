@@ -14,8 +14,9 @@ def create_pretraining_dataset(n_rows=1000000):
     """
     Create and process pretraining dataset from finepdfs.
     """
-    print(f"Loading {n_rows} rows from finepdfs dataset...")
-    split_dataset = load_finepdfs(n_rows)
+    dataset_key = "EssentialAI/eai-taxonomy-stem-w-dclm"
+    print(f"Loading {n_rows} rows from {dataset_key} dataset...")
+    split_dataset = load_finepdfs(n_rows, dataset_key)
 
     print("Tokenizing dataset for pretraining...")
     tokenized = split_dataset.map(
