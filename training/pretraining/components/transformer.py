@@ -34,6 +34,11 @@ def compute_goldfish_loss(logits, targets, mask_rate=0.02):
         Scalar tensor for loss.
     """
 
+    # use gpu
+    logits = logits.to(targets.device)
+    targets = targets.to(logits.device)
+
+
     # Flatten logits and targets for simplicity
     batch_size, seq_len, vocab_size = logits.size()
     logits_flat = logits.view(-1, vocab_size)
