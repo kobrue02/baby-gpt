@@ -8,6 +8,7 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 import os
 import numpy as np
 import tiktoken
+import re
 from tqdm import tqdm
 from string import punctuation
 
@@ -22,17 +23,28 @@ num_proc = 8
 num_proc_load_dataset = num_proc
 
 
+
 def clean_text(text):
-    """ Clean the input text by removing unwanted characters and formatting. """
-    text = text.replace('\n', ' ') # make all newlines spaces
-    text = ' '.join(text.split()) # make all whitespace single spaces
-    text = text.strip() # remove leading/trailing whitespace
-    text = text.lower() # make all lowercase
-    text = text.translate(
-        str.maketrans('', '', ''.join(
-            [c for c in punctuation if c not in ["'", ".", ",", "!", "?"]])
-    )) # remove most punctuation except some common ones
+    """Clean input text by removing unwanted characters, HTML tags, and extra formatting."""
+    # Remove HTML tags
+    text = re.sub(r'<.*?>', ' ', text)
+    # Remove URLs
+    text = re.sub(r'http\S+|www\S+', ' ', text)
+    # Replace newlines and tabs with spaces
+    text = text.replace('\n', ' ').replace('\t', ' ')
+    # Normalize whitespace
+    text = ' '.join(text.split())
+    # Lowercase
+    text = text.lower()
+    # Remove unwanted punctuation (keep common ones)
+    allowed_punct = {"'", ".", ",", "!", "?"}
+    text = text.translate(str.maketrans('', '', ''.join(
+        [c for c in punctuation if c not in allowed_punct]
+    )))
+    # Remove extra spaces again (in case punctuation removal added some)
+    text = ' '.join(text.split())
     return text
+
 
 def process(example):
     """
@@ -44,8 +56,8 @@ def process(example):
     ids = enc.encode_ordinary(text) # encode_ordinary ignores any special tokens
     ids.append(enc.eot_token) # add the end of text token, e.g. 50256 for gpt2 bpe
     # note: I think eot should be prepended not appended... hmm. it's called "eot" though...
-    out = {'ids': ids, 'len': len(ids)}
-    return out
+    return {'ids': ids, 'len': len(ids)}
+
 
 def process_sft(examples):
     """

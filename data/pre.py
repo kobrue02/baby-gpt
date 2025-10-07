@@ -6,56 +6,54 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 # https://github.com/HazyResearch/flash-attention/blob/main/training/src/datamodules/language_modeling_hf.py
 
 import sys
-from datasets import load_dataset, DatasetDict
+from datasets import load_dataset, DatasetDict, Dataset
 from data.utils import process, to_bins
+from tqdm import tqdm
 
 
-def create_pretraining_dataset(n_shards=10):
-    """
-    Create and process pretraining dataset from EssentialAI by downloading specific parquet shards.
 
-    Args:
-        n_shards: Number of parquet shards to download from the dataset
-    """
-    dataset_key = "EssentialAI/eai-taxonomy-stem-w-dclm"
+def get_dataset_splits(dataset_key, n_shards, test_size=0.001, seed=42):
     print(f"Loading first {n_shards} shards from {dataset_key} dataset...")
-
     # Load dataset in streaming mode to get first n_shards worth of data
     # Stream the dataset and take only what we need
     ds = load_dataset(dataset_key, split="train", streaming=True)
-
+    shard_size = 10000  # Each shard has approximately 10,000 examples
     # Calculate approximate number of examples to take based on shard count
     # Each shard has roughly similar number of examples
     # We'll take the first portion of the dataset
-    ds_list = list(ds.take(n_shards * 10000))  # Adjust multiplier based on shard size
-
-    # Convert back to Dataset
-    from datasets import Dataset
+    total_examples = n_shards * shard_size
+    ds_list = list(tqdm(ds.take(total_examples), total=total_examples, desc="Loading examples"))
     ds = Dataset.from_list(ds_list)
-
     # Remove all columns except 'text'
     ds = ds.remove_columns([col for col in ds.column_names if col != 'text'])
-
     # Create train/val split
     splits = ds.train_test_split(test_size=0.001, seed=42)
     split_dataset = DatasetDict({
         "train": splits["train"],
         "val": splits["test"]
     })
+    return split_dataset
 
-    print(split_dataset)
-
+def tokenize(dataset):
     print("Tokenizing dataset for pretraining...")
-    tokenized = split_dataset.map(
+    tokenized = dataset.map(
         process,
         remove_columns=['text'],
         desc="Processing pretraining examples" # type: ignore
     )
-
-    print("Saving tokenized dataset to binary files...")
-    to_bins(tokenized, suffix="pretrain")
-
     return tokenized
+    
+
+def create_pretraining_dataset(n_shards=10, dataset_key="EssentialAI/eai-taxonomy-stem-w-dclm"):
+    """
+    Create and process pretraining dataset from EssentialAI by downloading specific parquet shards.
+
+    Args:
+        n_shards: Number of parquet shards to download from the dataset
+    """
+    split_dataset = get_dataset_splits(dataset_key, n_shards, test_size=0.001, seed=42)
+    tokenized = tokenize(split_dataset)
+    to_bins(tokenized, suffix="pretrain")
 
 
 if __name__ == '__main__':
