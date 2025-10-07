@@ -54,7 +54,7 @@ def muon_update(
     momentum.lerp_(grad_orthonorm.to(momentum.dtype), 1-beta2)
 
     if nesterov:
-        update = grad_orthonorm.lerp(momentum, 1-beta1)
+        update = grad_orthonorm.lerp(momentum.to(grad_orthonorm.dtype), 1-beta1)
     else:
         update = momentum
 
