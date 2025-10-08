@@ -8,6 +8,10 @@ $ python -m training.pretraining
 import os
 import numpy as np
 import torch
+import warnings
+
+# Suppress Pydantic warnings about Field attributes
+warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
 
 from tqdm import tqdm
 from training.classes.trainer import Trainer
@@ -36,6 +40,7 @@ class PreTrainer(Trainer):
         self.iter_num = 0
         self.best_val_loss = 1e9
         self.current_loss = 0.0
+        self.observed_tokens_count = 0
         if self.resume:
             self.load_checkpoint()
         # initialize logger
@@ -86,7 +91,7 @@ class PreTrainer(Trainer):
         max_attempts = 5
         attempts = 0
 
-        while ix_tuple in self.seen_batches and attempts < max_attempts:
+        while ix_tuple in self._seen_batches and attempts < max_attempts:
             ix = torch.randint(
                 len(data) - self.config["block_size"], (self.config["batch_size"],)
             )
@@ -94,10 +99,10 @@ class PreTrainer(Trainer):
             attempts += 1
 
         # Reset seen_batches if we've seen too many (prevent memory growth)
-        if len(self.seen_batches) > 10000:
-            self.seen_batches.clear()
+        if len(self._seen_batches) > 10000:
+            self._seen_batches.clear()
 
-        self.seen_batches.add(ix_tuple)
+        self._seen_batches.add(ix_tuple)
         return ix
 
     def get_batch(self, split: str, data_dir="data"):
@@ -191,6 +196,7 @@ class PreTrainer(Trainer):
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
                 loss = loss / self.config["gradient_accumulation_steps"]
+                self.observed_tokens_count += torch.numel(self.X)
 
             # Check for NaN/inf loss before backward pass
             if not torch.isfinite(loss):
@@ -329,7 +335,7 @@ class PreTrainer(Trainer):
             try:
                 self.training_step(self.iter_num, data_dir)
                 self.pbar.update()
-                self.pbar.set_postfix_str(f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, best val {self.best_val_loss:.4f}")
+                self.pbar.set_postfix_str(f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, tokens {self.observed_tokens_count:,}")
                 self.iter_num += 1
             except KeyboardInterrupt:
                 self.save_checkpoint(self.iter_num)
