@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
-
 from enum import Enum
+
 
 class GoldfishStrategy(str, Enum):
     """Enumeration of Goldfish training strategies."""
@@ -9,68 +9,54 @@ class GoldfishStrategy(str, Enum):
     RANDOM = "random"
 
 
-def hash_context(context: torch.Tensor) -> int:
-    """A simple hash function for a given context tensor."""
-    hash_value = hash(context)
-    assert hash_value >= 0, "Hash function returned a negative value"
-    return hash_value
-
-
-
 def compute_goldfish_loss(
-        logits, 
-        targets, 
-        strategy: GoldfishStrategy = GoldfishStrategy.RANDOM, 
-        drop_frequency: int = 4, 
-        hash_context_width: int = 10
-    ) -> torch.Tensor:
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    strategy: GoldfishStrategy = GoldfishStrategy.STATIC,
+    drop_frequency: int = 4,
+    hash_context_width: int = 10,
+) -> torch.Tensor:
     """
-    Compute the Goldfish loss based on the specified strategy.
+    Compute the Goldfish loss for language model training.
 
     Args:
-        logits: The model's output logits.
-        targets: The ground truth target values.
-        strategy: The Goldfish training strategy to use (STATIC or RANDOM).
-        drop_frequency: Frequency of dropping tokens in RANDOM strategy.
-        hash_context_width: Context width for hashing in RANDOM strategy.
+        logits: Tensor of shape (B, T, C)
+        targets: Tensor of shape (B, T)
+        strategy: Goldfish strategy (STATIC or RANDOM)
+        drop_frequency: k parameter for dropping tokens
+        hash_context_width: context width for hashing
 
     Returns:
-        Computed loss value.
+        scalar loss
     """
-    h = hash_context_width
+    B, T, C = logits.size()
     k = drop_frequency
+    h = hash_context_width
 
     assert strategy in GoldfishStrategy, f"Invalid strategy: {strategy}"
     assert logits.shape[0] == targets.shape[0], "Batch sizes must match"
-    assert logits.ndim == 3, "Logits should be 3D (batch_size, sequence_length, num_classes)"
+    assert logits.ndim == 3, "Logits should be 3D (B, T, C)"
     assert k > 1, "Drop frequency k must be greater than 1"
-    assert h >= 7, "Hash context width is too small. "
-    "For example, if h=7 is used, the model may never learn to produce the word “Power” "
-    "at the end of the phrase “the Los Angeles Department of Water and Power.” " 
+    assert h >= 7, "Hash context width must be >= 7"
 
-    
-    B, T, C = logits.size()  # batch size, sequence length, number of classes
+    # Initialize mask: True = keep, False = drop
+    mask = torch.ones((B, T), device=logits.device, dtype=torch.bool)
 
     if strategy == GoldfishStrategy.STATIC:
-        # Static Goldfish: drop every k-th token
-        mask = torch.ones((B, T), device=logits.device, dtype=torch.bool)
-        mask[:, k-1::k] = 0  # Drop every k-th token
+        # Drop every k-th token
+        mask[:, k-1::k] = 0
 
-    elif strategy == GoldfishStrategy.RANDOM:
-        # Random Goldfish: drop tokens based on hash of preceding context
-        mask = torch.ones((B, T), device=logits.device, dtype=torch.bool)
-        for i in range(T):
-            if i >= h:
-                context = targets[:, i-h:i]
-                context_hash = hash_context(context)
-                if context_hash < 1/k:
-                    mask[:, i] = 0  # Drop token if hash is less than 1 over k
-        mask[:, :h] = 1  # Always keep the first h tokens
+    elif strategy == GoldfishStrategy.RANDOM and T > h:
+        raise NotImplementedError("RANDOM strategy is not implemented yet.")
 
-    # Apply mask to targets (2D) and logits (3D)
-    targets_masked = targets[mask]
-    mask_3d = mask.unsqueeze(-1).expand(-1, -1, C)
-    logits_masked = logits[mask_3d].view(-1, C)
+    # Flatten mask and logits for cross_entropy
+    mask_flat = mask.view(-1)
+    logits_flat = logits.view(-1, C)
+    targets_flat = targets.view(-1)
 
-    loss = F.cross_entropy(logits_masked, targets_masked, ignore_index=-1)
-    return loss
+    # Apply mask
+    logits_selected = logits_flat[mask_flat]
+    targets_selected = targets_flat[mask_flat]
+
+    # Compute loss
+    return F.cross_entropy(logits_selected, targets_selected, ignore_index=-1)
