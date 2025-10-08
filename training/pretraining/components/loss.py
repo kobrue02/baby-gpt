@@ -55,8 +55,7 @@ def compute_goldfish_loss(
         # Static Goldfish: drop every k-th token
         mask = torch.ones((B, T), device=logits.device, dtype=torch.bool)
         mask[:, k-1::k] = 0  # Drop every k-th token
-        mask = mask.unsqueeze(-1).expand(-1, -1, C)  # Expand mask to match logits shape
-    
+
     elif strategy == GoldfishStrategy.RANDOM:
         # Random Goldfish: drop tokens based on hash of preceding context
         mask = torch.ones((B, T), device=logits.device, dtype=torch.bool)
@@ -67,9 +66,11 @@ def compute_goldfish_loss(
                 if context_hash < 1/k:
                     mask[:, i] = 0  # Drop token if hash is less than 1 over k
         mask[:, :h] = 1  # Always keep the first h tokens
-        mask = mask.unsqueeze(-1).expand(-1, -1, C)  # Expand mask to match logits shape
-    
-    logits = logits[mask].view(-1, C)
-    targets = targets[mask].view(-1)
-    loss = F.cross_entropy(logits, targets, ignore_index=-1)
+
+    # Apply mask to targets (2D) and logits (3D)
+    targets_masked = targets[mask]
+    mask_3d = mask.unsqueeze(-1).expand(-1, -1, C)
+    logits_masked = logits[mask_3d].view(-1, C)
+
+    loss = F.cross_entropy(logits_masked, targets_masked, ignore_index=-1)
     return loss
