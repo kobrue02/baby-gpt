@@ -29,6 +29,8 @@ class PreTrainer(Trainer):
         self.meta_vocab_size, _, _ = self.derive_vocab_size("data")
         # initialize model
         self.model = self.init_model(self.meta_vocab_size, self.config.get("compile", True))
+        # Store raw model before compilation for checkpointing
+        self.raw_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
         # load checkpoint if resuming
         self.iter_num = 0
@@ -230,7 +232,7 @@ class PreTrainer(Trainer):
             return
 
         print(f"Resuming training from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device_type, weights_only=False)
 
         # Load model state
         state_dict = checkpoint["model"]
@@ -240,7 +242,8 @@ class PreTrainer(Trainer):
             if k.startswith(unwanted_prefix):
                 state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
 
-        self.model.load_state_dict(state_dict)
+        # Load into the raw (uncompiled) model
+        self.raw_model.load_state_dict(state_dict)
 
         # Load optimizer state
         self.optimizer.load_state_dict(checkpoint["optimizer"])
@@ -301,6 +304,8 @@ class PreTrainer(Trainer):
         self.forward_backward(data_dir)
         if self.device_type == "mps":
             cleanup_mps_memory()
+        elif self.device_type == "cuda":
+            torch.cuda.empty_cache()
 
     
     def train(self, data_dir="data"):
@@ -308,15 +313,26 @@ class PreTrainer(Trainer):
         Train the model.
         """
         self.X, self.Y = self.get_batch("train", data_dir)
-        self.raw_model = self.model
         self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
         while self.iter_num < self.config["max_iters"]:
             try:
-                self.pbar.update()
                 self.training_step(self.iter_num, data_dir)
+                self.pbar.update()
+                self.pbar.set_postfix_str(f"iter {self.iter_num}, lr {self.lr:.2e}")
                 self.iter_num += 1
             except KeyboardInterrupt:
                 self.save_checkpoint(self.iter_num)
                 self.pbar.close()
                 print("Exiting from training early.")
+                break
+            except RuntimeError as e:
+                self.pbar.close()
+                print(f"Error during training step: {e}")
+                print(str(e))
+                print("Memory usage summary:")
+                if self.device_type == "cuda":
+                    print(torch.cuda.memory_summary())
+                elif self.device_type == "mps":
+                    print(get_mps_memory_info())
+                print("Exiting from training.")
                 break
