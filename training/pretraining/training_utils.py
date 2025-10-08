@@ -35,6 +35,7 @@ class PreTrainer(Trainer):
         # load checkpoint if resuming
         self.iter_num = 0
         self.best_val_loss = 1e9
+        self.current_loss = 0.0
         if self.resume:
             self.load_checkpoint()
         # initialize logger
@@ -200,6 +201,7 @@ class PreTrainer(Trainer):
                 continue
 
             self.scaler.scale(loss).backward()
+            self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
             # get a new random unseen batch
             self.X, self.Y = self.get_batch("train", data_dir)
 
@@ -318,7 +320,7 @@ class PreTrainer(Trainer):
             try:
                 self.training_step(self.iter_num, data_dir)
                 self.pbar.update()
-                self.pbar.set_postfix_str(f"iter {self.iter_num}, lr {self.lr:.2e}")
+                self.pbar.set_postfix_str(f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, best val {self.best_val_loss:.4f}")
                 self.iter_num += 1
             except KeyboardInterrupt:
                 self.save_checkpoint(self.iter_num)
