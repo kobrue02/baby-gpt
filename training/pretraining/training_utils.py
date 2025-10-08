@@ -256,6 +256,12 @@ class PreTrainer(Trainer):
 
         print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
 
+    def _atomic_save_checkpoint(self, checkpoint):
+        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
+        temp_path = checkpoint_path + ".tmp"
+        torch.save(checkpoint, temp_path)
+        os.replace(temp_path, checkpoint_path)
+    
     def save_checkpoint(self, iter_num):
         checkpoint = {
             "model": self.raw_model.state_dict(),
@@ -265,7 +271,10 @@ class PreTrainer(Trainer):
             "config": self.config,
         }
         self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
-        torch.save(checkpoint, os.path.join(self.config["out_dir"], "ckpt.pt"))
+
+        # Use atomic write to prevent corruption on interruption
+        self._atomic_save_checkpoint(checkpoint)
+
         self.latest_checkpoint = checkpoint
 
     def eval_step(self, data_dir="data", iter_num=0):
