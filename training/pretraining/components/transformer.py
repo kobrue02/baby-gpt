@@ -179,10 +179,7 @@ class GPTWithMHA(Transformer):
         betas: tuple[Float, Float],
         device_type
         ):
-        # start with all of the candidate parameters
-        param_dict = {pn: p for pn, p in self.named_parameters()}
-        # filter out those that do not require grad
-        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+
         # acc to muon paper
         hidden_weights = [p for p in self.transformer.parameters() if p.ndim >= 2 and p.requires_grad]
         hidden_gains_biases = [p for p in self.transformer.parameters() if p.ndim < 2 and p.requires_grad]
@@ -196,7 +193,7 @@ class GPTWithMHA(Transformer):
                 lr=learning_rate, betas=betas, weight_decay=0.0),
         ]
         
-        print(f"training with {len(param_dict)} parameters")
+        print(f"training {int(len(hidden_weights)+len(hidden_gains_biases)+len(nonhidden_params))} trainable parameters")
         # Create AdamW optimizer and use the fused version if it is available
         # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
         optimizer = SingleDeviceMuonWithAuxAdam(param_groups)

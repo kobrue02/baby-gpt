@@ -22,13 +22,19 @@ class PreTrainer(Trainer):
     Trainer class to handle model training.
     """
 
-    def __init__(self):
+    def __init__(self, resume=False):
         super().__init__()
+        self.resume = resume
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
         self.meta_vocab_size, _, _ = self.derive_vocab_size("data")
         # initialize model
         self.model = self.init_model(self.meta_vocab_size, self.config.get("compile", True))
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
+        # load checkpoint if resuming
+        self.iter_num = 0
+        self.best_val_loss = 1e9
+        if self.resume:
+            self.load_checkpoint()
         # initialize logger
         self.wandb_logger = self.setup_logging()
 
@@ -215,6 +221,36 @@ class PreTrainer(Trainer):
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
 
+    def load_checkpoint(self):
+        """Load the latest checkpoint from the output directory."""
+        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
+
+        if not os.path.exists(checkpoint_path):
+            print(f"No checkpoint found at {checkpoint_path}, starting from scratch")
+            return
+
+        print(f"Resuming training from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
+
+        # Load model state
+        state_dict = checkpoint["model"]
+        # Remove '_orig_mod.' prefix if present (from compiled models)
+        unwanted_prefix = '_orig_mod.'
+        for k, v in list(state_dict.items()):
+            if k.startswith(unwanted_prefix):
+                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+
+        self.model.load_state_dict(state_dict)
+
+        # Load optimizer state
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+
+        # Load training state
+        self.iter_num = checkpoint["iter_num"]
+        self.best_val_loss = checkpoint["best_val_loss"]
+
+        print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
+
     def save_checkpoint(self, iter_num):
         checkpoint = {
             "model": self.raw_model.state_dict(),
@@ -271,18 +307,16 @@ class PreTrainer(Trainer):
         """
         Train the model.
         """
-        self.best_val_loss = 1e9
         self.X, self.Y = self.get_batch("train", data_dir)
         self.raw_model = self.model
-        self.pbar = tqdm(total=self.config["max_iters"])
-        iter_num = 0
-        while iter_num < self.config["max_iters"]:
+        self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
+        while self.iter_num < self.config["max_iters"]:
             try:
                 self.pbar.update()
-                self.training_step(iter_num, data_dir)
-                iter_num += 1
+                self.training_step(self.iter_num, data_dir)
+                self.iter_num += 1
             except KeyboardInterrupt:
-                self.save_checkpoint(iter_num)
+                self.save_checkpoint(self.iter_num)
                 self.pbar.close()
                 print("Exiting from training early.")
                 break
