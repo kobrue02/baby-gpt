@@ -50,13 +50,8 @@ def compute_goldfish_loss(
         raise NotImplementedError("RANDOM strategy is not implemented yet.")
 
     # Flatten mask and logits for cross_entropy
-    mask_flat = mask.view(-1)
     logits_flat = logits.view(-1, C)
     targets_flat = targets.view(-1)
 
-    # Apply mask
-    logits_selected = logits_flat[mask_flat]
-    targets_selected = targets_flat[mask_flat]
-
-    # Compute loss
-    return F.cross_entropy(logits_selected, targets_selected, ignore_index=-1)
+    # Apply mask and compute loss
+    return F.cross_entropy(logits_flat[mask.view(-1)], targets_flat[mask.view(-1)], ignore_index=-1)
