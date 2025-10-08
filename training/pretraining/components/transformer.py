@@ -18,56 +18,11 @@ from training.configurator import GPTConfig
 from training.classes.transformer import Transformer
 from training.pretraining.components.blocks import Block, LayerNorm
 from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
+from training.pretraining.components.loss import compute_goldfish_loss
 
 
 import torch
 import torch.nn.functional as F
-
-def compute_goldfish_loss(logits, targets, mask_rate=0.02):
-    """
-    Compute the Goldfish Loss for memorization mitigation.
-    
-    Args:
-        logits: Tensor of shape [batch_size, seq_len, vocab_size]
-        targets: Tensor of shape [batch_size, seq_len]
-        mask_rate: Fraction of tokens to include in the loss (default = 2%)
-    Returns:
-        Scalar tensor for loss.
-    """
-
-    # use gpu
-    logits = logits.to(targets.device)
-    targets = targets.to(logits.device)
-
-
-    # Flatten logits and targets for simplicity
-    batch_size, seq_len, vocab_size = logits.size()
-    logits_flat = logits.view(-1, vocab_size)
-    targets_flat = targets.view(-1)
-
-    # Create binary mask G ∈ {0,1}^L (1 means include this token)
-    # Masking ignores padding tokens (-1)
-    valid_mask = (targets_flat != -1)
-    random_mask = torch.rand_like(targets_flat.float()) < mask_rate
-    goldfish_mask = valid_mask & random_mask  # apply both conditions
-
-    # Compute log probabilities
-    log_probs = F.log_softmax(logits_flat, dim=-1)
-
-    # Select the log prob corresponding to the correct target token
-    selected_log_probs = log_probs[torch.arange(logits_flat.size(0)), targets_flat]
-    
-    # Apply mask and compute mean over selected tokens
-    masked_log_probs = selected_log_probs[goldfish_mask]
-
-    # Never return zero loss - this can cause NaN gradients during training
-    if masked_log_probs.numel() > 0:
-        loss = -masked_log_probs.mean()
-    else:
-        # Return small constant with gradient attached to avoid optimizer issues
-        loss = torch.tensor(1e-5, device=logits.device, dtype=logits.dtype, requires_grad=True)
-
-    return loss
 
 
 
@@ -125,7 +80,7 @@ class GPTWithMHA(Transformer):
     def compute_loss(self, logits, targets):
         """ Compute the cross-entropy loss, ignoring padding tokens (-1). """
         # return F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        return compute_goldfish_loss(logits, targets, mask_rate=0.02)
+        return compute_goldfish_loss(logits, targets)
 
     def forward(
         self,
