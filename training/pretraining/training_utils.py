@@ -41,6 +41,7 @@ class PreTrainer(Trainer):
         self.best_val_loss = 1e9
         self.current_loss = 0.0
         self.observed_tokens_count = 0
+        self._seen_batches = set()
         if self.resume:
             self.load_checkpoint()
         # initialize logger

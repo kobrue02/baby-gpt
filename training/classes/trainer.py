@@ -22,7 +22,6 @@ class Trainer(ABC):
         self.best_val_loss: float
         self.X: torch.Tensor
         self.Y: torch.Tensor
-        self.seen_batches = set()
         self.lr: float
         self.optimizer: torch.optim.Optimizer
         self.scaler: torch.cuda.amp.GradScaler
