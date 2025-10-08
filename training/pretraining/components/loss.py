@@ -34,7 +34,8 @@ def compute_goldfish_loss(
     k = drop_frequency
 
     assert strategy in GoldfishStrategy, f"Invalid strategy: {strategy}"
-    assert logits.size() == targets.size(), "Logits and targets must have the same shape"
+    assert logits.shape[0] == targets.shape[0], "Batch sizes must match"
+    assert logits.ndim == 2, "Logits should be 2D for causal language modeling loss"
     assert k > 1, "Drop frequency k must be greater than 1"
     assert h >= 7, "Hash context width is too small. "
     "For example, if h=7 is used, the model may never learn to produce the word “Power” "
