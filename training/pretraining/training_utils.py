@@ -234,7 +234,7 @@ class PreTrainer(Trainer):
             return
 
         print(f"Resuming training from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=self.device_type, weights_only=False)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
 
         # Load model state
         state_dict = checkpoint["model"]
