@@ -59,7 +59,13 @@ def compute_goldfish_loss(logits, targets, mask_rate=0.02):
     
     # Apply mask and compute mean over selected tokens
     masked_log_probs = selected_log_probs[goldfish_mask]
-    loss = -masked_log_probs.mean() if masked_log_probs.numel() > 0 else torch.tensor(0.0, device=logits.device)
+
+    # Never return zero loss - this can cause NaN gradients during training
+    if masked_log_probs.numel() > 0:
+        loss = -masked_log_probs.mean()
+    else:
+        # Return small constant with gradient attached to avoid optimizer issues
+        loss = torch.tensor(1e-5, device=logits.device, dtype=logits.dtype, requires_grad=True)
 
     return loss
 

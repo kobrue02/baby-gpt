@@ -182,6 +182,15 @@ class PreTrainer(Trainer):
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
                 loss = loss / self.config["gradient_accumulation_steps"]
+
+            # Check for NaN/inf loss before backward pass
+            if not torch.isfinite(loss):
+                self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
+                self.pbar.set_postfix_str("skipping this batch to prevent gradient corruption")
+                # Get a new batch and skip this iteration
+                self.X, self.Y = self.get_batch("train", data_dir)
+                continue
+
             self.scaler.scale(loss).backward()
             # get a new random unseen batch
             self.X, self.Y = self.get_batch("train", data_dir)
@@ -192,6 +201,14 @@ class PreTrainer(Trainer):
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
+
+        # Check for NaN gradients after clipping
+        for name, param in self.model.named_parameters():
+            if param.grad is not None and not torch.isfinite(param.grad).all():
+                self.pbar.set_postfix_str(f"corrupted gradient detected in {name}")
+                self.pbar.set_postfix_str("Skipping optimizer step due to NaN gradients")
+                self.optimizer.zero_grad(set_to_none=True)
+                return
 
         # step the optimizer and scaler
         self.scaler.step(self.optimizer)
@@ -206,7 +223,7 @@ class PreTrainer(Trainer):
             "best_val_loss": self.best_val_loss,
             "config": self.config,
         }
-        print(f"saving checkpoint to {self.config['out_dir']}")
+        self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
         torch.save(checkpoint, os.path.join(self.config["out_dir"], "ckpt.pt"))
         self.latest_checkpoint = checkpoint
 
