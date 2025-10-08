@@ -9,6 +9,13 @@ class GoldfishStrategy(str, Enum):
     RANDOM = "random"
 
 
+def hash_context(context: torch.Tensor) -> int:
+    """A simple hash function for a given context tensor."""
+    hash_value = hash(context)
+    assert hash_value >= 0, "Hash function returned a negative value"
+    return hash_value
+
+
 
 def compute_goldfish_loss(
         logits, 
@@ -56,9 +63,9 @@ def compute_goldfish_loss(
         for i in range(T):
             if i >= h:
                 context = targets[:, i-h:i]
-                context_hash = hash(context.tobytes())  # Hash the context
+                context_hash = hash_context(context)
                 if context_hash < 1/k:
-                    mask[:, i] = 0  # Drop token based on hash
+                    mask[:, i] = 0  # Drop token if hash is less than 1 over k
         mask[:, :h] = 1  # Always keep the first h tokens
         mask = mask.unsqueeze(-1).expand(-1, -1, C)  # Expand mask to match logits shape
     
