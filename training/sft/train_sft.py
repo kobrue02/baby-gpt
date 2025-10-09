@@ -198,8 +198,6 @@ class SFTTrainer(Trainer):
                 continue
 
             self.scaler.scale(loss).backward()
-            # get a new random unseen batch
-            self.X, self.Y, self.M = self.get_batch("train", data_dir)
 
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
@@ -218,6 +216,8 @@ class SFTTrainer(Trainer):
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
+        # get a new random unseen batch
+        self.X, self.Y, self.M = self.get_batch("train", data_dir)
 
     def eval_step(self, data_dir="data", iter_num=0):
         losses = self.estimate_loss(data_dir)
