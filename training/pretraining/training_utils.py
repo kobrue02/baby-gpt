@@ -49,6 +49,7 @@ class PreTrainer(Trainer):
         self.best_val_loss = 1e9
         self.current_loss = 0.0
         self.observed_tokens_count = 0
+        self.wandb_run_id = None
 
         # Load dataset size for epoch-based training
         self.train_data_len = self._get_dataset_length("train")
@@ -87,11 +88,22 @@ class PreTrainer(Trainer):
         if self.config["wandb_log"] and self.config["master_process"]:
             import wandb
 
-            wandb.init(
-                project=self.config["wandb_project"],
-                name=self.config["wandb_run_name"],
-                config=self.config,
-            )
+            # Resume existing run if we have a run ID, otherwise start new run
+            if self.wandb_run_id:
+                wandb.init(
+                    project=self.config["wandb_project"],
+                    id=self.wandb_run_id,
+                    resume="must",
+                    config=self.config,
+                )
+            else:
+                wandb.init(
+                    project=self.config["wandb_project"],
+                    name=self.config["wandb_run_name"],
+                    config=self.config,
+                )
+                # Store the run ID for future checkpoints
+                self.wandb_run_id = wandb.run.id
             return wandb
         return None
 
@@ -337,8 +349,11 @@ class PreTrainer(Trainer):
         self.iter_num = checkpoint.get("iter_num", 0)
         self.best_val_loss = checkpoint["best_val_loss"]
         self.observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
+        self.wandb_run_id = checkpoint.get("wandb_run_id", None)
+
+        wandb_msg = f" (wandb run ID: {self.wandb_run_id})" if self.wandb_run_id else ""
         print(
-            f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}"
+            f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}{wandb_msg}"
         )
 
     def load_checkpoint(self):
@@ -365,6 +380,7 @@ class PreTrainer(Trainer):
             "iter_num": iter_num,
             "best_val_loss": self.best_val_loss,
             "observed_tokens_count": self.observed_tokens_count,
+            "wandb_run_id": self.wandb_run_id,
             "config": self.config,
         }
         self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
