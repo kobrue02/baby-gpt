@@ -2,6 +2,7 @@ import torch
 import os
 import math
 import pickle
+import tiktoken
 
 from abc import ABC
 from typing import Tuple, Dict, Any
@@ -99,6 +100,10 @@ class Trainer(ABC):
             stoi, itos = meta["stoi"], meta["itos"]
             encode = lambda s: [stoi[c] for c in s]
             decode = lambda l: "".join([itos[i] for i in l])
+        else:
+            enc = tiktoken.get_encoding("gpt2")
+            encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+            decode = lambda l: enc.decode(l)
 
         return meta_vocab_size, encode, decode
 
