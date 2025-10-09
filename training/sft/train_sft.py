@@ -30,6 +30,9 @@ class SFTTrainer(Trainer):
         # initialize model
         self.model = self.init_model()
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
+        self._seen_batches = set()
+        self.iter_num = 0
+        self.best_val_loss = 1e9
         # initialize logger
         self.wandb_logger = self.setup_logging()
 
@@ -67,7 +70,7 @@ class SFTTrainer(Trainer):
         max_attempts = 5
         attempts = 0
 
-        while ix_tuple in self.seen_batches and attempts < max_attempts:
+        while ix_tuple in self._seen_batches and attempts < max_attempts:
             ix = torch.randint(
                 len(data) - self.config["block_size"], (self.config["batch_size"],)
             )
@@ -75,10 +78,10 @@ class SFTTrainer(Trainer):
             attempts += 1
 
         # Reset seen_batches if we've seen too many (prevent memory growth)
-        if len(self.seen_batches) > 10000:
-            self.seen_batches.clear()
+        if len(self._seen_batches) > 10000:
+            self._seen_batches.clear()
 
-        self.seen_batches.add(ix_tuple)
+        self._seen_batches.add(ix_tuple)
         return ix
 
     def get_batch(self, split: str, data_dir="data"):
@@ -157,7 +160,8 @@ class SFTTrainer(Trainer):
             for k in range(self.config["eval_iters"]):
                 self.X, self.Y, self.M = self.get_batch(split, data_dir)
                 with self.ctx:
-                    _, loss = self.model(self.X, self.Y)
+                    logits, _ = self.model(self.X, self.Y)
+                    loss = self._masked_loss(logits)
                 losses[k] = loss.item()
             out[split] = losses.mean()
         self.model.train()
@@ -179,6 +183,12 @@ class SFTTrainer(Trainer):
                 logits, _ = self.model(self.X, self.Y)
                 loss = self._masked_loss(logits)
                 loss = loss / self.config["gradient_accumulation_steps"]
+
+            # Check for NaN/inf loss before backward pass
+            if not torch.isfinite(loss):
+                self.X, self.Y, self.M = self.get_batch("train", data_dir)
+                continue
+
             self.scaler.scale(loss).backward()
             # get a new random unseen batch
             self.X, self.Y, self.M = self.get_batch("train", data_dir)
@@ -189,6 +199,12 @@ class SFTTrainer(Trainer):
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
+
+        # Check for NaN gradients after clipping
+        for name, param in self.model.named_parameters():
+            if param.grad is not None and not torch.isfinite(param.grad).all():
+                self.optimizer.zero_grad(set_to_none=True)
+                return
 
         # step the optimizer and scaler
         self.scaler.step(self.optimizer)
@@ -233,24 +249,24 @@ class SFTTrainer(Trainer):
         self.forward_backward(data_dir)
         if self.device_type == "mps":
             cleanup_mps_memory()
+        elif self.device_type == "cuda":
+            torch.cuda.empty_cache()
 
     
     def train(self, data_dir="data"):
         """
         Train the model.
         """
-        self.best_val_loss = 1e9
         self.X, self.Y, self.M = self.get_batch("train", data_dir)
         self.raw_model = self.model
-        self.pbar = tqdm(total=self.config["max_iters"])
-        iter_num = 0
-        while iter_num < self.config["max_iters"]:
+        self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
+        while self.iter_num < self.config["max_iters"]:
             try:
+                self.training_step(self.iter_num, data_dir)
                 self.pbar.update()
-                self.training_step(iter_num, data_dir)
-                iter_num += 1
+                self.iter_num += 1
             except KeyboardInterrupt:
-                self.save_checkpoint(iter_num)
+                self.save_checkpoint(self.iter_num)
                 self.pbar.close()
                 print("Exiting from training early.")
                 break
