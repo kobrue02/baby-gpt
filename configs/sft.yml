@@ -1,0 +1,43 @@
+# Supervised Fine-Tuning (SFT) Configuration
+# Static values that don't depend on runtime device/memory detection
+
+# I/O settings
+out_dir: "out_sft"
+eval_interval: 100
+log_interval: 200
+eval_iters: 200
+eval_only: false
+always_save_checkpoint: true
+init_from: "resume"  # typically resume from a pretrained checkpoint
+
+# Logging
+wandb_log: false  # enable if you want
+
+# Training hyperparameters
+batch_size: 4  # fixed batch size for SFT
+
+# Model architecture (should match pretrained checkpoint)
+n_layer: 8
+n_head: 16
+n_embd: 512
+dropout: 0.0
+bias: true
+
+# Optimizer settings
+learning_rate: 0.00005  # smaller LR for SFT (pretraining was 0.0003)
+n_epochs: 3  # usually fewer epochs than pretraining
+weight_decay: 0.0  # often 0 for SFT to avoid over-regularizing
+beta1: 0.9
+beta2: 0.95
+grad_clip: 1.0
+
+# Learning rate schedule
+decay_lr: true
+warmup_iters: 200
+lr_decay_iters: 2500
+min_lr: 0.000005
+
+# Process settings (static defaults)
+master_process: true
+seed_offset: 0
+ddp_world_size: 1

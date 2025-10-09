@@ -5,8 +5,10 @@ Configuration settings for training the transformer model.
 import torch
 import subprocess as sp
 import os
+import yaml
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def get_gpu_memory():
@@ -37,8 +39,19 @@ class GPTConfig:
     use_rotary: bool = True  # use rotary embeddings
 
 
-def get_device_config():
-    """Detect available device and return optimized settings."""
+def _load_yaml_config(config_name: str) -> dict:
+    """Load a YAML configuration file from the configs directory."""
+    config_path = Path(__file__).parent.parent / "configs" / f"{config_name}.yml"
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def get_device_config(config_type: str = "pretrain"):
+    """Detect available device and return optimized settings.
+
+    Args:
+        config_type: Type of config to use for batch_size override ("pretrain" or "sft")
+    """
     if torch.cuda.is_available():
 
         gpu_mem = get_gpu_memory()
@@ -72,6 +85,10 @@ def get_device_config():
                 batch_size = 2
                 grad_accum_steps = 16
 
+        # For SFT, override batch_size to 4 (as in original load_sft_config)
+        if config_type == "sft":
+            batch_size = 4
+
         return {
             "device": "cuda",
             "dtype": "float16",
@@ -84,24 +101,30 @@ def get_device_config():
         }
 
     elif torch.backends.mps.is_available():
+        # For SFT, use batch_size 4; for pretrain, use 2
+        batch_size = 4 if config_type == "sft" else 2
+
         return {
             "device": "mps",
             "dtype": "float32",
             "compile": False,
             "gradient_accumulation_steps": 4,
-            "batch_size": 2,
+            "batch_size": batch_size,
             "block_size": 1024,
             "wandb_project": "baby-gpt-mps",
             "wandb_run_name": "baby-gpt-mps-run",
         }
     else:
         # CPU fallback with conservative settings
+        # For SFT, use batch_size 4; for pretrain, use 1
+        batch_size = 4 if config_type == "sft" else 1
+
         return {
             "device": "cpu",
             "dtype": "float32",
             "compile": False,
             "gradient_accumulation_steps": 16,
-            "batch_size": 1,
+            "batch_size": batch_size,
             "block_size": 512,
             "wandb_project": "baby-gpt-cpu",
             "wandb_run_name": "baby-gpt-cpu-run",
@@ -110,127 +133,72 @@ def get_device_config():
 
 def load_config():
     """Load configuration settings for training."""
-    device_config = get_device_config()
+    # Load static configuration from YAML
+    config = _load_yaml_config("pretrain")
+
+    # Get dynamic device-specific configuration
+    device_config = get_device_config(config_type="pretrain")
 
     gradient_accumulation_steps = device_config["gradient_accumulation_steps"]
     batch_size = device_config["batch_size"]
     block_size = device_config["block_size"]
 
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
+    # Calculate derived values
+    ddp_world_size = config["ddp_world_size"]
     tokens_per_iter = (
         gradient_accumulation_steps * ddp_world_size * batch_size * block_size
     )
 
-    config = {
-        # Process settings
-        "master_process": master_process,
-        "seed_offset": seed_offset,
-        "ddp_world_size": ddp_world_size,
+    # Merge dynamic values with static config
+    config.update({
+        # Derived/calculated values
         "tokens_per_iter": tokens_per_iter,
-        # I/O settings
-        "out_dir": "out",
-        "eval_interval": 100,
-        "log_interval": 200,
-        "eval_iters": 200,
-        "eval_only": False,
-        "always_save_checkpoint": True,
-        "init_from": "scratch",
-        # Logging
-        "wandb_log": True,
-        "wandb_project": device_config["wandb_project"],
-        "wandb_run_name": device_config["wandb_run_name"],
-        # Training hyperparameters
+        # Dynamic device-specific values
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "batch_size": batch_size,
         "block_size": block_size,
-        # Model architecture
-        "n_layer": 8,
-        "n_head": 16,
-        "n_embd": 512,
-        "dropout": 0.0,
-        "bias": True,
-        # Optimizer settings
-        "learning_rate": 3e-4,
-        "n_epochs": 10,
-        "weight_decay": 1e-2,
-        "beta1": 0.9,
-        "beta2": 0.95,
-        "grad_clip": 1.0,
-        # Learning rate schedule
-        "decay_lr": True,
-        "warmup_iters": 500,
-        "lr_decay_iters": 5000,
-        "min_lr": 0.1,
-        # Device settings
         "device": device_config["device"],
         "dtype": device_config["dtype"],
         "compile": device_config["compile"],
-    }
+        "wandb_project": device_config["wandb_project"],
+        "wandb_run_name": device_config["wandb_run_name"],
+    })
+
     return config
 
 
 def load_sft_config():
     """Load configuration settings for supervised fine-tuning (SFT)."""
-    device_config = get_device_config()
+    # Load static configuration from YAML
+    config = _load_yaml_config("sft")
+
+    # Get dynamic device-specific configuration (with sft batch_size override)
+    device_config = get_device_config(config_type="sft")
 
     gradient_accumulation_steps = device_config["gradient_accumulation_steps"]
-    batch_size = 4
+    batch_size = config["batch_size"]  # Use batch_size from YAML (which is 4)
     block_size = device_config["block_size"]
 
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
+    # Calculate derived values
+    ddp_world_size = config["ddp_world_size"]
     tokens_per_iter = (
         gradient_accumulation_steps * ddp_world_size * batch_size * block_size
     )
 
-    config = {
-        # Process settings
-        "master_process": master_process,
-        "seed_offset": seed_offset,
-        "ddp_world_size": ddp_world_size,
+    # Merge dynamic values with static config
+    config.update({
+        # Derived/calculated values
         "tokens_per_iter": tokens_per_iter,
-        # I/O settings
-        "out_dir": "out_sft",  # separate output directory
-        "eval_interval": 100,  # evaluate a bit more frequently
-        "log_interval": 200,
-        "eval_iters": 200,
-        "eval_only": False,
-        "always_save_checkpoint": True,
-        "init_from": "resume",  # typically resume from a pretrained ckpt
-        # Logging
-        "wandb_log": False,  # enable if you want
+        # Dynamic device-specific values
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "block_size": block_size,
+        "device": device_config["device"],
+        "dtype": device_config["dtype"],
+        "compile": device_config["compile"],
         "wandb_project": device_config["wandb_project"].replace(
             "baby-gpt", "baby-gpt-sft"
         ),
         "wandb_run_name": device_config["wandb_run_name"].replace("run", "sft-run"),
-        # Training hyperparameters
-        "gradient_accumulation_steps": gradient_accumulation_steps,
-        "batch_size": batch_size,
-        "block_size": block_size,
-        # Model architecture (match pretrained checkpoint)
-        "n_layer": 8,
-        "n_head": 16,
-        "n_embd": 512,
-        "dropout": 0.0,
-        "bias": True,
-        # Optimizer settings
-        "learning_rate": 5e-5,  # smaller LR for SFT (pretraining was 3e-4)
-        "n_epochs": 3,  # usually fewer epochs than pretraining
-        "weight_decay": 0.0,  # often 0 for SFT to avoid over-regularizing
-        "beta1": 0.9,
-        "beta2": 0.95,
-        "grad_clip": 1.0,
-        # Learning rate schedule
-        "decay_lr": True,
-        "warmup_iters": 200,
-        "lr_decay_iters": 2500,
-        "min_lr": 5e-6,
-        # Device settings
-        "device": device_config["device"],
-        "dtype": device_config["dtype"],
-        "compile": device_config["compile"],
-    }
+    })
+
     return config
