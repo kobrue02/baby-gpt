@@ -129,7 +129,7 @@ def load_sft_config():
     device_config = get_device_config()
 
     gradient_accumulation_steps = device_config["gradient_accumulation_steps"]
-    batch_size = device_config["batch_size"]
+    batch_size = 4
     block_size = device_config["block_size"]
 
     master_process = True
