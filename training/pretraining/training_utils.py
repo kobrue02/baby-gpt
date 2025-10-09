@@ -487,4 +487,4 @@ class PreTrainer(Trainer):
                 break
 
         self.pbar.close()
-        print(f"\nTraining complete! Completed {self.config['n_epochs']} epochs.")
+        print(f"exiting training - epoch {epoch}, iter {self.iter_num}")
