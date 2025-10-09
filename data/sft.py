@@ -15,7 +15,7 @@ def load_general_knowledge(n_rows=1000000, test_size=0.001, seed=42):
     Returns:
         DatasetDict with 'train' and 'val' splits containing 'Question' and 'Answer' columns
     """
-    ds_key = "GeoGPT-Research-Project/GeoGPT-QA"
+    ds_key = "MuskumPillerum/General-Knowledge"
 
     # Load dataset in streaming mode
     ds = load_dataset(ds_key, split="train", streaming=True)
@@ -76,6 +76,6 @@ def create_sft_dataset(n_rows=10000):
 
 
 if __name__ == '__main__':
-    n_rows = int(sys.argv[1] if len(sys.argv) > 1 else 1000000)
+    n_rows = int(sys.argv[1] if len(sys.argv) > 1 else 10000)
     create_sft_dataset(n_rows)
     print("Done. Now you can fine tune a model on the dataset using train_sft.py.")
