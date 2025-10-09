@@ -42,7 +42,7 @@ class GPTWithMHA(Transformer):
         if not config.use_rotary:
             self.wpe = nn.Embedding(config.block_size, config.n_embd)
         else:
-            print("Using rotary YaRN embeddings")
+            print("using rotary YaRN embeddings")
         self.transformer = nn.ModuleDict(dict(
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]), # n hidden layers

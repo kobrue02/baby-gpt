@@ -43,6 +43,7 @@ class PreTrainer(Trainer):
         self.current_loss = 0.0
         self.observed_tokens_count = 0
         self._seen_batches = set()
+        self.wandb_run_id = None  # Will be set by load_checkpoint if resuming
         if self.resume:
             self.load_checkpoint()
         # initialize logger
@@ -72,11 +73,21 @@ class PreTrainer(Trainer):
         if self.config["wandb_log"] and self.config["master_process"]:
             import wandb
 
-            wandb.init(
-                project=self.config["wandb_project"],
-                name=self.config["wandb_run_name"],
-                config=self.config,
-            )
+            # Resume existing run if we have a run ID from checkpoint
+            if self.wandb_run_id:
+                wandb.init(
+                    project=self.config["wandb_project"],
+                    id=self.wandb_run_id,
+                    resume="must",
+                    config=self.config,
+                )
+                print(f"Resumed wandb run: {self.wandb_run_id}")
+            else:
+                wandb.init(
+                    project=self.config["wandb_project"],
+                    name=self.config["wandb_run_name"],
+                    config=self.config,
+                )
             return wandb
         return None
 
@@ -265,11 +276,33 @@ class PreTrainer(Trainer):
         # Load optimizer state
         self.optimizer.load_state_dict(checkpoint["optimizer"])
 
+        # Load scaler state if available (for backwards compatibility)
+        if "scaler" in checkpoint:
+            self.scaler.load_state_dict(checkpoint["scaler"])
+
         # Load training state
         self.iter_num = checkpoint["iter_num"]
         self.best_val_loss = checkpoint["best_val_loss"]
 
-        print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
+        # Load observed tokens count if available (for backwards compatibility)
+        if "observed_tokens_count" in checkpoint:
+            self.observed_tokens_count = checkpoint["observed_tokens_count"]
+
+        # Load wandb run ID if available (for backwards compatibility)
+        if "wandb_run_id" in checkpoint:
+            self.wandb_run_id = checkpoint["wandb_run_id"]
+
+        # Load learning rate if available (for backwards compatibility)
+        if "lr" in checkpoint:
+            self.lr = checkpoint["lr"]
+            # Update optimizer with the saved learning rate
+            for param_group in self.optimizer.param_groups:
+                param_group["lr"] = self.lr
+            print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}, lr {self.lr:.2e}, tokens {self.observed_tokens_count:,}")
+        else:
+            # For old checkpoints without lr, calculate it based on current iteration
+            self.lr = self.get_lr(self.iter_num) if self.config["decay_lr"] else self.config["learning_rate"]
+            print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}, lr {self.lr:.2e} (calculated), tokens {self.observed_tokens_count:,}")
 
     def _atomic_save_checkpoint(self, checkpoint):
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
@@ -281,10 +314,18 @@ class PreTrainer(Trainer):
         checkpoint = {
             "model": self.raw_model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
+            "scaler": self.scaler.state_dict(),
             "iter_num": iter_num,
             "best_val_loss": self.best_val_loss,
             "config": self.config,
+            "lr": self.lr,  # Store current learning rate
+            "observed_tokens_count": self.observed_tokens_count,
         }
+
+        # Store wandb run ID if logging is enabled
+        if self.wandb_logger:
+            checkpoint["wandb_run_id"] = self.wandb_logger.run.id
+
         self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
 
         # Use atomic write to prevent corruption on interruption
