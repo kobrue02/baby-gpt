@@ -15,7 +15,7 @@ def load_general_knowledge(n_rows=1000000, test_size=0.001, seed=42):
     Returns:
         DatasetDict with 'train' and 'val' splits containing 'Question' and 'Answer' columns
     """
-    ds_key = "MuskumPillerum/General-Knowledge"
+    ds_key = "GeoGPT-Research-Project/GeoGPT-QA"
 
     # Load dataset in streaming mode
     ds = load_dataset(ds_key, split="train", streaming=True)
@@ -40,7 +40,7 @@ def load_general_knowledge(n_rows=1000000, test_size=0.001, seed=42):
     return split_dataset
 
 
-def create_sft_dataset(n_rows=1000000):
+def create_sft_dataset(n_rows=10000):
     """
     Create and process SFT dataset from general knowledge Q&A pairs.
     """
