@@ -38,14 +38,20 @@ class PreTrainer(Trainer):
         self.raw_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
         # load checkpoint if resuming
+        self.epoch = 0
         self.iter_num = 0
         self.best_val_loss = 1e9
         self.current_loss = 0.0
         self.observed_tokens_count = 0
-        self._seen_batches = set()
-        self.wandb_run_id = None  # Will be set by load_checkpoint if resuming
-        if self.resume:
+
+        # Load dataset size for epoch-based training
+        self.train_data_len = self._get_dataset_length("train")
+        self.steps_per_epoch = self.train_data_len // (self.config["batch_size"] * self.config["block_size"])
+        self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
+
+        if self.resume: # load existing checkpoint
             self.load_checkpoint()
+
         # initialize logger
         self.wandb_logger = self.setup_logging()
 
@@ -73,52 +79,48 @@ class PreTrainer(Trainer):
         if self.config["wandb_log"] and self.config["master_process"]:
             import wandb
 
-            # Resume existing run if we have a run ID from checkpoint
-            if self.wandb_run_id:
-                wandb.init(
-                    project=self.config["wandb_project"],
-                    id=self.wandb_run_id,
-                    resume="must",
-                    config=self.config,
-                )
-                print(f"Resumed wandb run: {self.wandb_run_id}")
-            else:
-                wandb.init(
-                    project=self.config["wandb_project"],
-                    name=self.config["wandb_run_name"],
-                    config=self.config,
-                )
+            wandb.init(
+                project=self.config["wandb_project"],
+                name=self.config["wandb_run_name"],
+                config=self.config,
+            )
             return wandb
         return None
 
-    def find_unseen_batch(self, data: np.memmap):
-        """
-        Find a new unseen batch of data indices.
-        """
-        ix = torch.randint(
-            len(data) - self.config["block_size"], (self.config["batch_size"],)
-        )
-
-        # Convert tensor to tuple for set membership check
-        ix_tuple = tuple(ix.tolist())
-        max_attempts = 5
-        attempts = 0
-
-        while ix_tuple in self._seen_batches and attempts < max_attempts:
-            ix = torch.randint(
-                len(data) - self.config["block_size"], (self.config["batch_size"],)
+    def _get_dataset_length(self, split: str):
+        """Get the length of the dataset in tokens."""
+        if split == "train":
+            data = np.memmap(
+                os.path.join(self.data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
             )
-            ix_tuple = tuple(ix.tolist())
-            attempts += 1
+        else:
+            data = np.memmap(
+                os.path.join(self.data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
+            )
+        return len(data)
 
-        # Reset seen_batches if we've seen too many (prevent memory growth)
-        if len(self._seen_batches) > 10000:
-            self._seen_batches.clear()
+    def _create_dataloader_indices(self, data_len: int):
+        """Create shuffled indices for epoch-based training."""
+        # Calculate number of sequences we can extract
+        num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
 
-        self._seen_batches.add(ix_tuple)
-        return ix
+        # Create sequential starting indices
+        indices = torch.arange(0, num_sequences * self.config["block_size"], self.config["block_size"])
 
-    def get_batch(self, split: str):
+        # Shuffle indices for this epoch
+        shuffled_indices = indices[torch.randperm(len(indices))]
+
+        return shuffled_indices
+
+    def get_batch(self, split: str, indices: torch.Tensor, batch_idx: int):
+        """
+        Get a batch of data using pre-shuffled indices.
+
+        Args:
+            split: 'train' or 'val'
+            indices: Shuffled indices for this epoch
+            batch_idx: Current batch index within the epoch
+        """
         # We recreate np.memmap every batch to avoid a memory leak, as per
         # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
         if split == "train":
@@ -130,14 +132,18 @@ class PreTrainer(Trainer):
                 os.path.join(self.data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
             )
 
-        ix = self.find_unseen_batch(data)
+        # Get batch_size indices from the shuffled index array
+        start_idx = batch_idx * self.config["batch_size"]
+        end_idx = min(start_idx + self.config["batch_size"], len(indices))
+        batch_indices = indices[start_idx:end_idx]
 
+        # Load sequences at these positions
         x = torch.stack([
             torch.from_numpy((data[i : i + self.config["block_size"]]).astype(np.int64))
-            for i in ix])
+            for i in batch_indices])
         y = torch.stack([
             torch.from_numpy((data[i + 1 : i + 1 + self.config["block_size"]]).astype(np.int64))
-            for i in ix])
+            for i in batch_indices])
 
         x, y = x.to(self.device_type), y.to(self.device_type)
         return x, y
@@ -155,9 +161,8 @@ class PreTrainer(Trainer):
             bias=self.config["bias"],
             dropout=self.config["dropout"],
         )
-        # init a new model from scratch
-        print("Initializing a new model from scratch")
-        # determine the vocab size we'll use for from-scratch training
+        
+        # determine the vocab size we'll use for training
         if meta_vocab_size is None:
             print(
                 "defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)"
@@ -178,7 +183,10 @@ class PreTrainer(Trainer):
 
     def init_optimizer_and_scaler(self):
         """Initialize the optimizer and gradient scaler."""
-        scaler = torch.cuda.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
+        if torch.__version__ <= "2.4":
+            scaler = torch.cuda.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
+        else:
+            scaler = torch.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
         optimizer = self.model.configure_optimizers(
             self.config["weight_decay"],
             self.config["learning_rate"],
@@ -194,8 +202,13 @@ class PreTrainer(Trainer):
         self.model.eval()
         for split in ["train", "val"]:
             losses = torch.zeros(self.config["eval_iters"])
+            # Create temporary indices for evaluation
+            data_len = self._get_dataset_length(split)
+            eval_indices = self._create_dataloader_indices(data_len)
             for k in range(self.config["eval_iters"]):
-                self.X, self.Y = self.get_batch(split)
+                if k >= len(eval_indices) // self.config["batch_size"]:
+                    break  # Don't go past the dataset
+                self.X, self.Y = self.get_batch(split, eval_indices, k)
                 with self.ctx:
                     _, loss = self.model(self.X, self.Y)
                 losses[k] = loss.item()
@@ -203,10 +216,17 @@ class PreTrainer(Trainer):
         self.model.train()
         return out
 
-    def forward_backward(self):
+    def forward_backward(self, train_indices, batch_idx):
         # forward backward update, with optional gradient accumulation
         performed_backward = False
-        for _ in range(self.config["gradient_accumulation_steps"]):
+        for micro_step in range(self.config["gradient_accumulation_steps"]):
+            # Get next batch for gradient accumulation
+            current_batch_idx = batch_idx * self.config["gradient_accumulation_steps"] + micro_step
+            if current_batch_idx >= len(train_indices) // self.config["batch_size"]:
+                break  # Don't go past the epoch
+
+            self.X, self.Y = self.get_batch("train", train_indices, current_batch_idx)
+
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
                 loss = loss / self.config["gradient_accumulation_steps"]
@@ -216,15 +236,11 @@ class PreTrainer(Trainer):
             if not torch.isfinite(loss):
                 self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
                 self.pbar.set_postfix_str("skipping this batch to prevent gradient corruption")
-                # Get a new batch and skip this iteration
-                self.X, self.Y = self.get_batch("train")
                 continue
 
             self.scaler.scale(loss).backward()
             performed_backward = True
             self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
-            # get a new random unseen batch
-            self.X, self.Y = self.get_batch("train")
 
         # Skip optimizer step if no backward passes were performed
         if not performed_backward:
@@ -251,58 +267,38 @@ class PreTrainer(Trainer):
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
 
-    def load_checkpoint(self):
-        """Load the latest checkpoint from the output directory."""
+    def _validate_checkpoint(self, checkpoint_path):
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
-
         if not os.path.exists(checkpoint_path):
             print(f"No checkpoint found at {checkpoint_path}, starting from scratch")
             return
-
         print(f"Resuming training from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
-
+        return torch.load(checkpoint_path, map_location=self.device_type)
+    
+    def _load_states(self, checkpoint):
         # Load model state
         state_dict = checkpoint["model"]
-        # Remove '_orig_mod.' prefix if present (from compiled models)
-        unwanted_prefix = '_orig_mod.'
-        for k, v in list(state_dict.items()):
-            if k.startswith(unwanted_prefix):
-                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+        for k in list(state_dict.keys()):
+            if k.startswith('_orig_mod.'):
+                state_dict[k[len('_orig_mod.'):]] = state_dict.pop(k)
 
         # Load into the raw (uncompiled) model
         self.raw_model.load_state_dict(state_dict)
-
-        # Load optimizer state
         self.optimizer.load_state_dict(checkpoint["optimizer"])
-
-        # Load scaler state if available (for backwards compatibility)
-        if "scaler" in checkpoint:
-            self.scaler.load_state_dict(checkpoint["scaler"])
-
-        # Load training state
-        self.iter_num = checkpoint["iter_num"]
+        self.epoch = checkpoint.get("epoch", 0)
+        self.iter_num = checkpoint.get("iter_num", 0)
         self.best_val_loss = checkpoint["best_val_loss"]
+        self.observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
+        print(f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
 
-        # Load observed tokens count if available (for backwards compatibility)
-        if "observed_tokens_count" in checkpoint:
-            self.observed_tokens_count = checkpoint["observed_tokens_count"]
-
-        # Load wandb run ID if available (for backwards compatibility)
-        if "wandb_run_id" in checkpoint:
-            self.wandb_run_id = checkpoint["wandb_run_id"]
-
-        # Load learning rate if available (for backwards compatibility)
-        if "lr" in checkpoint:
-            self.lr = checkpoint["lr"]
-            # Update optimizer with the saved learning rate
-            for param_group in self.optimizer.param_groups:
-                param_group["lr"] = self.lr
-            print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}, lr {self.lr:.2e}, tokens {self.observed_tokens_count:,}")
+    def load_checkpoint(self):
+        """Load the latest checkpoint from the output directory."""
+        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
+        checkpoint = self._validate_checkpoint(checkpoint_path)
+        if checkpoint is None:
+            return  # No checkpoint to load
         else:
-            # For old checkpoints without lr, calculate it based on current iteration
-            self.lr = self.get_lr(self.iter_num) if self.config["decay_lr"] else self.config["learning_rate"]
-            print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}, lr {self.lr:.2e} (calculated), tokens {self.observed_tokens_count:,}")
+            self._load_states(checkpoint)
 
     def _atomic_save_checkpoint(self, checkpoint):
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
@@ -310,22 +306,16 @@ class PreTrainer(Trainer):
         torch.save(checkpoint, temp_path)
         os.replace(temp_path, checkpoint_path)
     
-    def save_checkpoint(self, iter_num):
+    def save_checkpoint(self, epoch, iter_num):
         checkpoint = {
             "model": self.raw_model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "scaler": self.scaler.state_dict(),
+            "epoch": epoch,
             "iter_num": iter_num,
             "best_val_loss": self.best_val_loss,
-            "config": self.config,
-            "lr": self.lr,  # Store current learning rate
             "observed_tokens_count": self.observed_tokens_count,
+            "config": self.config,
         }
-
-        # Store wandb run ID if logging is enabled
-        if self.wandb_logger:
-            checkpoint["wandb_run_id"] = self.wandb_logger.run.id
-
         self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
 
         # Use atomic write to prevent corruption on interruption
@@ -333,11 +323,12 @@ class PreTrainer(Trainer):
 
         self.latest_checkpoint = checkpoint
 
-    def eval_step(self, iter_num=0):
+    def eval_step(self, epoch, iter_num=0):
         losses = self.estimate_loss()
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
+                    "epoch": epoch,
                     "iter": iter_num,
                     "train/loss": losses["train"],
                     "val/loss": losses["val"],
@@ -347,10 +338,10 @@ class PreTrainer(Trainer):
         if losses["val"] < self.best_val_loss or self.config["always_save_checkpoint"]:
             self.best_val_loss = losses["val"]
             if iter_num > 0:
-                self.save_checkpoint(iter_num)
+                self.save_checkpoint(epoch, iter_num)
 
 
-    def training_step(self, iter_num=0):
+    def training_step(self, epoch, iter_num, train_indices, batch_idx):
         """Perform a single training step."""
 
         # determine and set the learning rate for this iteration
@@ -361,34 +352,52 @@ class PreTrainer(Trainer):
             iter_num % self.config["eval_interval"] == 0
             and self.config["master_process"]
         ):
-            self.eval_step(iter_num)
+            self.eval_step(epoch, iter_num)
 
         # at the end of training, we can skip the final forward/backward pass
         if iter_num == 0 and self.config["eval_only"]:
             return
 
         # else, perform the forward/backward pass and clear memory
-        self.forward_backward()
+        self.forward_backward(train_indices, batch_idx)
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
 
-    
+
     def train(self):
         """
-        Train the model.
+        Train the model using epoch-based training.
         """
-        self.X, self.Y = self.get_batch("train")
-        self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
-        while self.iter_num < self.config["max_iters"]:
+        self.pbar = tqdm(total=self.total_steps, initial=self.iter_num, desc="Training")
+
+        for epoch in range(self.epoch, self.config["n_epochs"]):
+            print(f"\n=== Epoch {epoch + 1}/{self.config['n_epochs']} ===")
+
+            # Shuffle indices for this epoch
+            train_indices = self._create_dataloader_indices(self.train_data_len)
+
+            # Calculate batches per epoch accounting for gradient accumulation
+            batches_per_epoch = (len(train_indices) // self.config["batch_size"]) // self.config["gradient_accumulation_steps"]
+
             try:
-                self.training_step(self.iter_num)
-                self.pbar.update()
-                self.pbar.set_postfix_str(f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, tokens {self.observed_tokens_count:,}")
-                self.iter_num += 1
+                for batch_idx in range(batches_per_epoch):
+                    self.training_step(epoch, self.iter_num, train_indices, batch_idx)
+                    self.pbar.update()
+                    self.pbar.set_postfix_str(
+                        f"epoch {epoch + 1}/{self.config['n_epochs']}, "
+                        f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, "
+                        f"tokens {self.observed_tokens_count:,}"
+                    )
+                    self.iter_num += 1
+
+                # Save checkpoint at end of epoch
+                if self.config["master_process"]:
+                    self.save_checkpoint(epoch + 1, self.iter_num)
+
             except KeyboardInterrupt:
-                self.save_checkpoint(self.iter_num)
+                self.save_checkpoint(epoch, self.iter_num)
                 self.pbar.close()
                 print("Exiting from training early.")
                 break
@@ -403,3 +412,6 @@ class PreTrainer(Trainer):
                     print(get_mps_memory_info())
                 print("Exiting from training.")
                 break
+
+        self.pbar.close()
+        print(f"\nTraining complete! Completed {self.config['n_epochs']} epochs.")

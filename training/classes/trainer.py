@@ -24,7 +24,7 @@ class Trainer(ABC):
         self.Y: torch.Tensor
         self.lr: float
         self.optimizer: torch.optim.Optimizer
-        self.scaler: torch.cuda.amp.GradScaler
+        self.scaler: torch.cuda.amp.GradScaler | torch.amp.GradScaler # type: ignore
         self.model: Any
         self.raw_model: Any
 

@@ -150,7 +150,7 @@ def load_config():
         "bias": True,
         # Optimizer settings
         "learning_rate": 3e-4,
-        "max_iters": 10000,
+        "n_epochs": 10,
         "weight_decay": 1e-2,
         "beta1": 0.9,
         "beta2": 0.95,
@@ -217,7 +217,7 @@ def load_sft_config():
 
         # Optimizer settings
         "learning_rate": 5e-5,     # smaller LR for SFT (pretraining was 3e-4)
-        "max_iters": 3000,         # usually fewer steps than pretraining
+        "n_epochs": 3,             # usually fewer epochs than pretraining
         "weight_decay": 0.0,       # often 0 for SFT to avoid over-regularizing
         "beta1": 0.9,
         "beta2": 0.95,
