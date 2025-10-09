@@ -1,0 +1,29 @@
+# on changes in training/pretraining, run pretraining tests
+name: Run Pretraining Tests on Merge
+on:
+  push:
+    paths:
+      - 'training/pretraining/**'
+      - 'configs/pretrain.yml'
+      - '.github/workflows/run_tests_on_merge.yml'
+  pull_request:
+    paths:
+      - 'training/pretraining/**'
+      - 'configs/pretrain.yml'
+      - '.github/workflows/run_tests_on_merge.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Pretraining Tests
+        run: |
+          python -m pytest training/pretraining/tests -v
