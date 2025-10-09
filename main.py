@@ -12,6 +12,15 @@ app = typer.Typer(
     help="LLM Training CLI - Manage pretraining and supervised fine-tuning"
 )
 
+# Create subcommand groups
+initialize_app = typer.Typer(help="Initialize datasets")
+start_app = typer.Typer(help="Start training from scratch")
+resume_app = typer.Typer(help="Resume training from checkpoint")
+
+app.add_typer(initialize_app, name="initialize")
+app.add_typer(start_app, name="start")
+app.add_typer(resume_app, name="resume")
+
 
 class TrainingMode(str, Enum):
     """Training mode enumeration."""
@@ -20,7 +29,7 @@ class TrainingMode(str, Enum):
     SFT = "sft"
 
 
-@app.command()
+@initialize_app.command("pretraining")
 def initialize_pretraining(
     n_shards: Annotated[int, typer.Option(help="Number of shards to download")] = 10,
     dataset: Annotated[
@@ -44,7 +53,7 @@ def initialize_pretraining(
     )
 
 
-@app.command()
+@initialize_app.command("sft")
 def initialize_sft(
     n_rows: Annotated[int, typer.Option(help="Number of rows to load")] = 10000,
 ):
@@ -63,7 +72,7 @@ def initialize_sft(
     )
 
 
-@app.command()
+@resume_app.command("pretraining")
 def resume_pretraining():
     """
     Resume pretraining from the latest checkpoint.
@@ -78,7 +87,7 @@ def resume_pretraining():
     trainer.train()
 
 
-@app.command()
+@start_app.command("pretraining")
 def start_pretraining():
     """
     Start pretraining from scratch.
@@ -93,7 +102,7 @@ def start_pretraining():
     trainer.train()
 
 
-@app.command()
+@resume_app.command("sft")
 def resume_sft():
     """
     Resume SFT from the latest checkpoint.
@@ -108,7 +117,7 @@ def resume_sft():
     trainer.train()
 
 
-@app.command()
+@start_app.command("sft")
 def start_sft():
     """
     Start SFT from scratch or from a pretrained model.
