@@ -86,4 +86,4 @@ def create_sft_dataset(n_rows=10000):
 if __name__ == '__main__':
     n_rows = int(sys.argv[1] if len(sys.argv) > 1 else 10000)
     create_sft_dataset(n_rows)
-    print("Done. Now you can fine tune a model on the dataset using train_sft.py.")
+    print("Done. Now you can fine tune a model on the dataset using `python -m training.sft`")

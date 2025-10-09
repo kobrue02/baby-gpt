@@ -18,6 +18,23 @@ def scaled_dot_product_attention(
     scale=None,
     enable_gqa=False,
 ) -> torch.Tensor:
+    """
+    Scaled Dot-Product Attention with optional causal masking and attention mask.
+    Implemented manually for compatibility with PyTorch versions < 2.0.
+
+    Args:
+        query (torch.Tensor): query of shape (..., L, E)
+        key (torch.Tensor): key of shape (..., S, E)
+        value (torch.Tensor): value of shape (..., S, E_v)
+        attn_mask (torch.Tensor, optional): attention mask of shape (L, S). Default: None
+        dropout_p (float, optional): Dropout probability. Default: 0.0
+        is_causal (bool, optional): Whether to apply causal mask. Default: False
+        scale (float, optional): Scaling factor for dot product. Default: None
+        enable_gqa (bool, optional): Whether to enable Grouped Query Attention (GQA). Default: False
+    
+    Returns:
+        attn_output (torch.Tensor): output of shape (..., L, E_v)
+    """
     L, S = query.size(-2), key.size(-2)
     scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
     attn_bias = torch.zeros(L, S, dtype=query.dtype, device=query.device)
@@ -121,12 +138,23 @@ class MultiHeadAttention(nn.Module):
 
         # Step 3. Run SDPA
         # (B, nheads, T, E_head)
-        attn_output = scaled_dot_product_attention(
-            query, key, value,
-            attn_mask=attn_mask,
-            dropout_p=(self.dropout if self.training else 0.0),
-            is_causal=is_causal
-        )
+        if torch.__version__ >= "2.0":
+            assert hasattr(torch.nn.functional, 'scaled_dot_product_attention')
+            # use flash attention if available (PyTorch >= 2.0)
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query, key, value,
+                attn_mask=attn_mask,
+                dropout_p=(self.dropout if self.training else 0.0),
+                is_causal=is_causal
+            )
+        else:
+            # otherwise use manual implementation
+            attn_output = scaled_dot_product_attention(
+                query, key, value,
+                attn_mask=attn_mask,
+                dropout_p=(self.dropout if self.training else 0.0),
+                is_causal=is_causal
+            )
 
         # (B, nheads, T, E_head) -> (B, T, nheads, E_head) -> (B, T, E_total)
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, C)
@@ -139,7 +167,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
-
+    """ Vanilla multi-head masked self-attention with a projection at the end. Implemented by Andrej Karpathy. """
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0

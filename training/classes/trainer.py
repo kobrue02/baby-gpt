@@ -55,7 +55,10 @@ class Trainer(ABC):
             "bfloat16": torch.bfloat16,
             "float16": torch.float16,
         }[self.config["dtype"]]
-        ctx = torch.cuda.amp.autocast(dtype=ptdtype)  # type: ignore
+        if torch.__version__ >= "2.4": # load autocast from the correct place depending on torch version
+            ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) # type: ignore
+        else:
+            ctx = torch.cuda.amp.autocast(dtype=ptdtype)  # type: ignore
         return device_type, ptdtype, ctx
 
     def get_batch(

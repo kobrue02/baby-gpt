@@ -57,4 +57,4 @@ def create_pretraining_dataset(n_shards=10, dataset_key="facebook/recycling_the_
 if __name__ == '__main__':
     n_shards = int(sys.argv[1] if len(sys.argv) > 1 else 10)
     create_pretraining_dataset(n_shards)
-    print("Done. Now you can run train.py to train a model on the dataset.")
+    print("Done. Now you can run `python -m training.pretraining` to train a model on the dataset.")

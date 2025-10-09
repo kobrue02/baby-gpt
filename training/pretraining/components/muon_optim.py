@@ -1,3 +1,9 @@
+"""
+Muon optimizer implementation in PyTorch, including distributed and single-device variants.
+Based on the paper "Muon: MomentUm Orthogonalized by Newton-Schulz" by Keller et al.
+(https://kellerjordan.github.io/posts/muon/)
+"""
+
 import torch
 import torch.distributed as dist
 

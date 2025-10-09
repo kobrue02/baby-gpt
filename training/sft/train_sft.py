@@ -23,17 +23,23 @@ class SFTTrainer(Trainer):
     Trainer class to handle model training.
     """
 
-    def __init__(self, data_dir="data"):
+    def __init__(self, resume=False, data_dir="data"):
         super().__init__()
+        self.resume = resume
         self.data_dir = data_dir
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
         self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
         # initialize model
         self.model = self.init_model()
+        # Store raw model before any potential compilation
+        self.raw_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
         self._seen_batches = set()
         self.iter_num = 0
         self.best_val_loss = 1e9
+        # load checkpoint if resuming
+        if self.resume:
+            self.load_checkpoint()
         # initialize logger
         self.wandb_logger = self.setup_logging()
 
@@ -118,10 +124,16 @@ class SFTTrainer(Trainer):
     def init_model(self) -> GPTWithMHA:
         """
         Initialize the model from a checkpoint.
+        If resuming, loads from SFT checkpoint. Otherwise, loads from pretraining checkpoint.
         """
-        # init from a model saved in a specific directory
-        ckpt_path = os.path.join('out', 'ckpt.pt')
-        print(f"Initializing model from {ckpt_path}")
+        # Determine which checkpoint to load from
+        if self.resume:
+            ckpt_path = os.path.join(self.config['out_dir'], 'ckpt.pt')
+            print(f"Resuming SFT from {ckpt_path}")
+        else:
+            ckpt_path = os.path.join('out', 'ckpt.pt')
+            print(f"Initializing SFT model from pretrained checkpoint {ckpt_path}")
+
         checkpoint = torch.load(ckpt_path, map_location=self.device_type)
 
         # Extract model configuration from checkpoint
@@ -132,7 +144,7 @@ class SFTTrainer(Trainer):
             n_embd=model_config['n_embd'],
             block_size=model_config['block_size'],
             bias=model_config['bias'],
-            dropout=0.0,  # Set to 0 for inference
+            dropout=0.0,  # Set to 0 for fine-tuning
             vocab_size=model_config.get('vocab_size', 50304)
         )
         self.meta_vocab_size = model_config.get("vocab_size", 50304)
@@ -158,6 +170,64 @@ class SFTTrainer(Trainer):
             self.device_type,
         )
         return optimizer, scaler
+
+    def load_checkpoint(self):
+        """Load the latest SFT checkpoint from the output directory."""
+        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
+
+        if not os.path.exists(checkpoint_path):
+            print(f"No checkpoint found at {checkpoint_path}, starting from pretrained model")
+            return
+
+        print(f"Resuming SFT training from {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
+
+        # Load model state
+        state_dict = checkpoint["model"]
+        # Remove '_orig_mod.' prefix if present (from compiled models)
+        unwanted_prefix = '_orig_mod.'
+        for k, v in list(state_dict.items()):
+            if k.startswith(unwanted_prefix):
+                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+
+        # Load into the raw (uncompiled) model
+        self.raw_model.load_state_dict(state_dict)
+
+        # Load optimizer state
+        self.optimizer.load_state_dict(checkpoint["optimizer"])
+
+        # Load training state
+        self.iter_num = checkpoint["iter_num"]
+        self.best_val_loss = checkpoint["best_val_loss"]
+
+        print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
+
+    def _atomic_save_checkpoint(self, checkpoint):
+        """Atomically save checkpoint to prevent corruption on interruption."""
+        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
+        temp_path = checkpoint_path + ".tmp"
+        torch.save(checkpoint, temp_path)
+        os.replace(temp_path, checkpoint_path)
+
+    def save_checkpoint(self, iter_num):
+        """
+        Save the latest model checkpoint.
+        Args:
+            iter_num (int): The current iteration number.
+        """
+        checkpoint = {
+            "model": self.raw_model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "iter_num": iter_num,
+            "best_val_loss": self.best_val_loss,
+            "config": self.config,
+        }
+        print(f"saving checkpoint to {self.config['out_dir']}")
+
+        # Use atomic write to prevent corruption on interruption
+        self._atomic_save_checkpoint(checkpoint)
+
+        self.latest_checkpoint = checkpoint
 
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
@@ -296,7 +366,6 @@ class SFTTrainer(Trainer):
         Train the model.
         """
         self.X, self.Y, self.M = self.get_batch("train")
-        self.raw_model = self.model
         self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
         while self.iter_num < self.config["max_iters"]:
             try:
