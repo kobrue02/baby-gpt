@@ -35,7 +35,7 @@ class PreTrainer(Trainer):
         self.data_dir = data_dir
 
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
-        self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
+        self.meta_vocab_size, self.encode, self.decode = self.derive_vocab_size(self.data_dir)
         
         # initialize model
         self.model = self.init_model(
@@ -394,6 +394,7 @@ class PreTrainer(Trainer):
         self.latest_checkpoint = checkpoint
 
     def get_mean_perplexity(self):
+        # list of encodings
         generations_batch = self._generate_random_completions(
             max_new_tokens=50, num_samples=5, temperature=0.8
         )

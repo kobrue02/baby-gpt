@@ -100,10 +100,10 @@ class Trainer(ABC):
 
             # TODO want to make this more general to arbitrary encoder/decoder schemes
             stoi, itos = meta["stoi"], meta["itos"]
-            self.encode = lambda s: [stoi[c] for c in s]
-            self.decode = lambda l: "".join([itos[i] for i in l])
+            encode = lambda s: [stoi[c] for c in s]
+            decode = lambda l: "".join([itos[i] for i in l])
 
-        return meta_vocab_size, iter_num, best_val_loss
+        return meta_vocab_size, encode, decode
 
     def init_model(self, *args, **kwargs):
         """
