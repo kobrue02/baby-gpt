@@ -23,26 +23,27 @@ num_proc = 8
 num_proc_load_dataset = num_proc
 
 
-
 def clean_text(text):
     """Clean input text by removing unwanted characters, HTML tags, and extra formatting."""
     # Remove HTML tags
-    text = re.sub(r'<.*?>', ' ', text)
+    text = re.sub(r"<.*?>", " ", text)
     # Remove URLs
-    text = re.sub(r'http\S+|www\S+', ' ', text)
+    text = re.sub(r"http\S+|www\S+", " ", text)
     # Replace newlines and tabs with spaces
-    text = text.replace('\n', ' ').replace('\t', ' ')
+    text = text.replace("\n", " ").replace("\t", " ")
     # Normalize whitespace
-    text = ' '.join(text.split())
+    text = " ".join(text.split())
     # Lowercase
     text = text.lower()
     # Remove unwanted punctuation (keep common ones)
     allowed_punct = {"'", ".", ",", "!", "?"}
-    text = text.translate(str.maketrans('', '', ''.join(
-        [c for c in punctuation if c not in allowed_punct]
-    )))
+    text = text.translate(
+        str.maketrans(
+            "", "", "".join([c for c in punctuation if c not in allowed_punct])
+        )
+    )
     # Remove extra spaces again (in case punctuation removal added some)
-    text = ' '.join(text.split())
+    text = " ".join(text.split())
     return text
 
 
@@ -50,13 +51,13 @@ def process(example):
     """
     Take a text example and encode to ids using tiktoken GPT-2 BPE.
     """
-    text = example['text']
+    text = example["text"]
     text = clean_text(text)
     # encode
-    ids = enc.encode_ordinary(text) # encode_ordinary ignores any special tokens
-    ids.append(enc.eot_token) # add the end of text token, e.g. 50256 for gpt2 bpe
+    ids = enc.encode_ordinary(text)  # encode_ordinary ignores any special tokens
+    ids.append(enc.eot_token)  # add the end of text token, e.g. 50256 for gpt2 bpe
     # note: I think eot should be prepended not appended... hmm. it's called "eot" though...
-    return {'ids': ids, 'len': len(ids)}
+    return {"ids": ids, "len": len(ids)}
 
 
 def process_sft(examples):
@@ -66,14 +67,14 @@ def process_sft(examples):
     Filters out examples with None or non-string Question/Answer fields.
     """
     # Handle both single example and batch
-    if isinstance(examples['Question'], str):
+    if isinstance(examples["Question"], str):
         # Single example
-        questions = [examples['Question']]
-        answers = [examples['Answer']]
+        questions = [examples["Question"]]
+        answers = [examples["Answer"]]
     else:
         # Batch
-        questions = examples['Question']
-        answers = examples['Answer']
+        questions = examples["Question"]
+        answers = examples["Answer"]
 
     all_ids = []
     all_masks = []
@@ -90,94 +91,98 @@ def process_sft(examples):
         if not q_clean or not a_clean:
             continue
 
-        q_ids = enc.encode_ordinary(q_clean + "\n")   # include the separator
+        q_ids = enc.encode_ordinary(q_clean + "\n")  # include the separator
         a_ids = enc.encode_ordinary(a_clean)
         ids = q_ids + a_ids
         ids.append(enc.eot_token)
 
         # 1 for assistant tokens, 0 for user tokens
-        mask = [0] * len(q_ids) + [1] * (len(a_ids) + 1)  # +1 for eot if you want loss on eot
+        mask = [0] * len(q_ids) + [1] * (
+            len(a_ids) + 1
+        )  # +1 for eot if you want loss on eot
 
         all_ids.append(ids)
         all_masks.append(mask)
         all_lens.append(len(ids))
 
     # Return in the format expected by datasets
-    if isinstance(examples['Question'], str):
+    if isinstance(examples["Question"], str):
         # Single example - return single values (or None if filtered out)
         if len(all_ids) == 0:
             return None
-        return {
-            'ids': all_ids[0],
-            'mask': all_masks[0],
-            'len': all_lens[0]
-        }
+        return {"ids": all_ids[0], "mask": all_masks[0], "len": all_lens[0]}
     else:
         # Batch - return lists
-        return {
-            'ids': all_ids,
-            'mask': all_masks,
-            'len': all_lens
-        }
+        return {"ids": all_ids, "mask": all_masks, "len": all_lens}
 
-def memmap(split, dset, dtype, suffix=''):
+
+def memmap(split, dset, dtype, suffix=""):
     """
     Take a tokenized dataset and save to binary files.
     """
-    arr_len = np.sum(dset['len'], dtype=np.uint64) # type: ignore
-    if suffix == '':
-        filename = os.path.join(os.path.dirname(__file__), f'{split}.bin')
+    arr_len = np.sum(dset["len"], dtype=np.uint64)  # type: ignore
+    if suffix == "":
+        filename = os.path.join(os.path.dirname(__file__), f"{split}.bin")
     else:
-        filename = os.path.join(os.path.dirname(__file__), f'{split}_{suffix}.bin')
-    arr = np.memmap(filename, dtype=dtype, mode='w+', shape=(arr_len,)) # type: ignore
+        filename = os.path.join(os.path.dirname(__file__), f"{split}_{suffix}.bin")
+    arr = np.memmap(filename, dtype=dtype, mode="w+", shape=(arr_len,))  # type: ignore
     total_batches = min(1024, len(dset))
     idx = 0
-    for batch_idx in tqdm(range(total_batches), desc=f'writing {filename}'):
+    for batch_idx in tqdm(range(total_batches), desc=f"writing {filename}"):
         # Batch together samples for faster write
-        batch = dset.shard(num_shards=total_batches, index=batch_idx, contiguous=True).with_format('numpy')
-        arr_batch = np.concatenate(batch['ids']) # type: ignore
+        batch = dset.shard(
+            num_shards=total_batches, index=batch_idx, contiguous=True
+        ).with_format("numpy")
+        arr_batch = np.concatenate(batch["ids"])  # type: ignore
         # Write into mmap
         arr[idx : idx + len(arr_batch)] = arr_batch
         idx += len(arr_batch)
     assert idx == arr_len
     return arr
 
-def memmap_sft(split, dset, dtype, suffix='sft'):
+
+def memmap_sft(split, dset, dtype, suffix="sft"):
     """
     Take a tokenized dataset and save to binary files for tokens and masks.
     """
-    arr_len = np.sum(dset['len'], dtype=np.uint64)
-    token_file = os.path.join(os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}.bin')
-    mask_file  = os.path.join(os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin')
+    arr_len = np.sum(dset["len"], dtype=np.uint64)
+    token_file = os.path.join(
+        os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}.bin'
+    )
+    mask_file = os.path.join(
+        os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin'
+    )
 
-    tokens = np.memmap(token_file, dtype=dtype, mode='w+', shape=(arr_len,)) # type: ignore
-    masks  = np.memmap(mask_file, dtype=np.uint8, mode='w+', shape=(arr_len,)) # type: ignore
+    tokens = np.memmap(token_file, dtype=dtype, mode="w+", shape=(arr_len,))  # type: ignore
+    masks = np.memmap(mask_file, dtype=np.uint8, mode="w+", shape=(arr_len,))  # type: ignore
 
     total_batches = min(1024, len(dset))
     idx = 0
-    for batch_idx in tqdm(range(total_batches), desc=f'writing {token_file}'):
-        batch = dset.shard(num_shards=total_batches, index=batch_idx, contiguous=True).with_format('numpy')
-        ids_batch = np.concatenate(batch['ids'])
-        mask_batch = np.concatenate(batch['mask'])
-        tokens[idx:idx+len(ids_batch)] = ids_batch
-        masks[idx:idx+len(mask_batch)] = mask_batch
+    for batch_idx in tqdm(range(total_batches), desc=f"writing {token_file}"):
+        batch = dset.shard(
+            num_shards=total_batches, index=batch_idx, contiguous=True
+        ).with_format("numpy")
+        ids_batch = np.concatenate(batch["ids"])
+        mask_batch = np.concatenate(batch["mask"])
+        tokens[idx : idx + len(ids_batch)] = ids_batch
+        masks[idx : idx + len(mask_batch)] = mask_batch
         idx += len(ids_batch)
 
     assert idx == arr_len
     return tokens, masks
 
 
-def to_bins(tokenized, suffix='', is_sft=False):
+def to_bins(tokenized, suffix="", is_sft=False):
     """
     Take a tokenized dataset and save to binary files.
     """
-    dtype = np.uint16 # (can do since enc.max_token_value == 50256 is < 2**16)
+    dtype = np.uint16  # (can do since enc.max_token_value == 50256 is < 2**16)
 
     # Auto-detect SFT format if not explicitly specified
-    if not is_sft and suffix == 'sft':
+    if not is_sft and suffix == "sft":
         is_sft = True
 
-    for split, dset in tokenized.items(): # type: ignore
+    for split, dset in tokenized.items():  # type: ignore
         if is_sft:
             tokens, masks = memmap_sft(split, dset, dtype, suffix)
             masks.flush()
@@ -185,6 +190,3 @@ def to_bins(tokenized, suffix='', is_sft=False):
             tokens = memmap(split, dset, dtype, suffix)
         # flush to disk
         tokens.flush()
-
-
-    

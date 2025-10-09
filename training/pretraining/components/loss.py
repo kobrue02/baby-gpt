@@ -5,6 +5,7 @@ from enum import Enum
 
 class GoldfishStrategy(str, Enum):
     """Enumeration of Goldfish training strategies."""
+
     STATIC = "static"
     RANDOM = "random"
 
@@ -44,7 +45,7 @@ def compute_goldfish_loss(
 
     if strategy == GoldfishStrategy.STATIC:
         # Drop every k-th token
-        mask[:, k-1::k] = 0
+        mask[:, k - 1 :: k] = 0
 
     elif strategy == GoldfishStrategy.RANDOM and T > h:
         raise NotImplementedError("RANDOM strategy is not implemented yet.")
@@ -54,4 +55,6 @@ def compute_goldfish_loss(
     targets_flat = targets.view(-1)
 
     # Apply mask and compute loss
-    return F.cross_entropy(logits_flat[mask.view(-1)], targets_flat[mask.view(-1)], ignore_index=-1)
+    return F.cross_entropy(
+        logits_flat[mask.view(-1)], targets_flat[mask.view(-1)], ignore_index=-1
+    )

@@ -8,11 +8,14 @@ import typer
 from typing_extensions import Annotated
 from enum import Enum
 
-app = typer.Typer(help="LLM Training CLI - Manage pretraining and supervised fine-tuning")
+app = typer.Typer(
+    help="LLM Training CLI - Manage pretraining and supervised fine-tuning"
+)
 
 
 class TrainingMode(str, Enum):
     """Training mode enumeration."""
+
     PRETRAINING = "pretraining"
     SFT = "sft"
 
@@ -20,7 +23,9 @@ class TrainingMode(str, Enum):
 @app.command()
 def initialize_pretraining(
     n_shards: Annotated[int, typer.Option(help="Number of shards to download")] = 10,
-    dataset: Annotated[str, typer.Option(help="Dataset key to use")] = "facebook/recycling_the_web"
+    dataset: Annotated[
+        str, typer.Option(help="Dataset key to use")
+    ] = "facebook/recycling_the_web",
 ):
     """
     Initialize pretraining dataset by downloading and processing data.
@@ -32,12 +37,16 @@ def initialize_pretraining(
 
     typer.echo(f"Initializing pretraining with {n_shards} shards from {dataset}...")
     create_pretraining_dataset(n_shards=n_shards, dataset_key=dataset)
-    typer.secho("Pretraining dataset initialized successfully!", fg=typer.colors.GREEN, bold=True)
+    typer.secho(
+        "Pretraining dataset initialized successfully!",
+        fg=typer.colors.GREEN,
+        bold=True,
+    )
 
 
 @app.command()
 def initialize_sft(
-    n_rows: Annotated[int, typer.Option(help="Number of rows to load")] = 10000
+    n_rows: Annotated[int, typer.Option(help="Number of rows to load")] = 10000,
 ):
     """
     Initialize SFT (Supervised Fine-Tuning) dataset.
@@ -49,7 +58,9 @@ def initialize_sft(
 
     typer.echo(f"Initializing SFT dataset with {n_rows} rows...")
     create_sft_dataset(n_rows=n_rows)
-    typer.secho("SFT dataset initialized successfully!", fg=typer.colors.GREEN, bold=True)
+    typer.secho(
+        "SFT dataset initialized successfully!", fg=typer.colors.GREEN, bold=True
+    )
 
 
 @app.command()
@@ -129,6 +140,7 @@ def status():
     pretrain_dir = Path("out")
     if pretrain_dir.exists() and (pretrain_dir / "ckpt.pt").exists():
         import torch
+
         ckpt = torch.load(pretrain_dir / "ckpt.pt", map_location="cpu")
         typer.echo(f"\nPretraining:")
         typer.echo(f"  Checkpoint: {pretrain_dir / 'ckpt.pt'}")
@@ -141,6 +153,7 @@ def status():
     sft_dir = Path("out_sft")
     if sft_dir.exists() and (sft_dir / "ckpt.pt").exists():
         import torch
+
         ckpt = torch.load(sft_dir / "ckpt.pt", map_location="cpu")
         typer.echo(f"\nSFT:")
         typer.echo(f"  Checkpoint: {sft_dir / 'ckpt.pt'}")
@@ -170,8 +183,12 @@ def status():
 
 @app.command()
 def clean(
-    mode: Annotated[TrainingMode, typer.Argument(help="Which mode to clean (pretraining or sft)")],
-    confirm: Annotated[bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")] = False
+    mode: Annotated[
+        TrainingMode, typer.Argument(help="Which mode to clean (pretraining or sft)")
+    ],
+    confirm: Annotated[
+        bool, typer.Option("--yes", "-y", help="Skip confirmation prompt")
+    ] = False,
 ):
     """
     Clean up checkpoints and data for a specific training mode.
@@ -191,8 +208,7 @@ def clean(
 
     if not confirm:
         typer.confirm(
-            f"Are you sure you want to clean {mode.value} checkpoints?",
-            abort=True
+            f"Are you sure you want to clean {mode.value} checkpoints?", abort=True
         )
 
     # Remove checkpoint directory
@@ -208,12 +224,20 @@ def clean(
 @app.command()
 def generate(
     prompt: Annotated[str, typer.Argument(help="The text prompt to generate from")],
-    checkpoint: Annotated[str, typer.Option(help="Path to checkpoint (default: out/ckpt.pt for pretrain, out_sft/ckpt.pt for sft)")] = None, # type: ignore
-    use_sft: Annotated[bool, typer.Option("--sft", help="Use SFT checkpoint instead of pretrained")] = False,
-    max_tokens: Annotated[int, typer.Option(help="Maximum number of tokens to generate")] = 100,
-    temperature: Annotated[float, typer.Option(help="Sampling temperature (higher = more random)")] = 0.8,
-    top_k: Annotated[int, typer.Option(help="Top-k sampling parameter (None for no filtering)")] = None, # type: ignore
-    device: Annotated[str, typer.Option(help="Device to run on (cpu, cuda, mps)")] = "cpu",
+    checkpoint: Annotated[str, typer.Option(help="Path to checkpoint (default: out/ckpt.pt for pretrain, out_sft/ckpt.pt for sft)")] = None,  # type: ignore
+    use_sft: Annotated[
+        bool, typer.Option("--sft", help="Use SFT checkpoint instead of pretrained")
+    ] = False,
+    max_tokens: Annotated[
+        int, typer.Option(help="Maximum number of tokens to generate")
+    ] = 100,
+    temperature: Annotated[
+        float, typer.Option(help="Sampling temperature (higher = more random)")
+    ] = 0.8,
+    top_k: Annotated[int, typer.Option(help="Top-k sampling parameter (None for no filtering)")] = None,  # type: ignore
+    device: Annotated[
+        str, typer.Option(help="Device to run on (cpu, cuda, mps)")
+    ] = "cpu",
 ):
     """
     Generate text from a prompt using a trained model.
@@ -237,40 +261,46 @@ def generate(
 
     checkpoint_path = Path(checkpoint)
     if not checkpoint_path.exists():
-        typer.secho(f"Error: Checkpoint not found at {checkpoint_path}", fg=typer.colors.RED, bold=True)
+        typer.secho(
+            f"Error: Checkpoint not found at {checkpoint_path}",
+            fg=typer.colors.RED,
+            bold=True,
+        )
         raise typer.Exit(1)
 
     typer.echo(f"Loading checkpoint from {checkpoint_path}...")
 
     # Load checkpoint
     ckpt = torch.load(checkpoint_path, map_location=device)
-    model_config = ckpt['config']
+    model_config = ckpt["config"]
 
     # Initialize model
     model_args = dict(
-        n_layer=model_config['n_layer'],
-        n_head=model_config['n_head'],
-        n_embd=model_config['n_embd'],
-        block_size=model_config['block_size'],
-        bias=model_config['bias'],
+        n_layer=model_config["n_layer"],
+        n_head=model_config["n_head"],
+        n_embd=model_config["n_embd"],
+        block_size=model_config["block_size"],
+        bias=model_config["bias"],
         dropout=0.0,  # Disable dropout for inference
-        vocab_size=model_config.get('vocab_size', 50304)
+        vocab_size=model_config.get("vocab_size", 50304),
     )
     gptconf = GPTConfig(**model_args)
     model = GPTWithMHA(gptconf)
 
     # Load model weights
-    state_dict = ckpt['model']
-    unwanted_prefix = '_orig_mod.'
+    state_dict = ckpt["model"]
+    unwanted_prefix = "_orig_mod."
     for k, v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
-            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+            state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
     typer.secho(f"Model loaded successfully!", fg=typer.colors.GREEN)
-    typer.echo(f"Generating with temperature={temperature}, max_tokens={max_tokens}, top_k={top_k}\n")
+    typer.echo(
+        f"Generating with temperature={temperature}, max_tokens={max_tokens}, top_k={top_k}\n"
+    )
 
     # Encode prompt
     prompt_ids = enc.encode_ordinary(prompt)
@@ -285,23 +315,30 @@ def generate(
             prompt_tensor,
             max_new_tokens=max_tokens,
             temperature=temperature,
-            top_k=top_k
+            top_k=top_k,
         )
 
     # Decode output
     output_text = enc.decode(output_ids[0].tolist())
     typer.secho(output_text, fg=typer.colors.WHITE, bold=True)
     typer.echo("-" * 50)
-    typer.secho(f"\nGenerated {len(output_ids[0]) - len(prompt_ids)} tokens", fg=typer.colors.GREEN)
+    typer.secho(
+        f"\nGenerated {len(output_ids[0]) - len(prompt_ids)} tokens",
+        fg=typer.colors.GREEN,
+    )
 
 
 @app.command()
 def interactive(
-    checkpoint: Annotated[str, typer.Option(help="Path to checkpoint")] = None, # type: ignore
-    use_sft: Annotated[bool, typer.Option("--sft", help="Use SFT checkpoint instead of pretrained")] = False,
-    max_tokens: Annotated[int, typer.Option(help="Maximum number of tokens to generate")] = 100,
+    checkpoint: Annotated[str, typer.Option(help="Path to checkpoint")] = None,  # type: ignore
+    use_sft: Annotated[
+        bool, typer.Option("--sft", help="Use SFT checkpoint instead of pretrained")
+    ] = False,
+    max_tokens: Annotated[
+        int, typer.Option(help="Maximum number of tokens to generate")
+    ] = 100,
     temperature: Annotated[float, typer.Option(help="Sampling temperature")] = 0.8,
-    top_k: Annotated[int, typer.Option(help="Top-k sampling parameter")] = None, # type: ignore
+    top_k: Annotated[int, typer.Option(help="Top-k sampling parameter")] = None,  # type: ignore
     device: Annotated[str, typer.Option(help="Device to run on")] = "cpu",
 ):
     """
@@ -327,48 +364,56 @@ def interactive(
 
     checkpoint_path = Path(checkpoint)
     if not checkpoint_path.exists():
-        typer.secho(f"Error: Checkpoint not found at {checkpoint_path}", fg=typer.colors.RED, bold=True)
+        typer.secho(
+            f"Error: Checkpoint not found at {checkpoint_path}",
+            fg=typer.colors.RED,
+            bold=True,
+        )
         raise typer.Exit(1)
 
     typer.echo(f"Loading checkpoint from {checkpoint_path}...")
 
     # Load checkpoint
     ckpt = torch.load(checkpoint_path, map_location=device)
-    model_config = ckpt['config']
+    model_config = ckpt["config"]
 
     # Initialize model
     model_args = dict(
-        n_layer=model_config['n_layer'],
-        n_head=model_config['n_head'],
-        n_embd=model_config['n_embd'],
-        block_size=model_config['block_size'],
-        bias=model_config['bias'],
+        n_layer=model_config["n_layer"],
+        n_head=model_config["n_head"],
+        n_embd=model_config["n_embd"],
+        block_size=model_config["block_size"],
+        bias=model_config["bias"],
         dropout=0.0,
-        vocab_size=model_config.get('vocab_size', 50304)
+        vocab_size=model_config.get("vocab_size", 50304),
     )
     gptconf = GPTConfig(**model_args)
     model = GPTWithMHA(gptconf)
 
     # Load model weights
-    state_dict = ckpt['model']
-    unwanted_prefix = '_orig_mod.'
+    state_dict = ckpt["model"]
+    unwanted_prefix = "_orig_mod."
     for k, v in list(state_dict.items()):
         if k.startswith(unwanted_prefix):
-            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+            state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
     typer.secho(f"\nModel loaded successfully!", fg=typer.colors.GREEN, bold=True)
-    typer.echo(f"Settings: temperature={temperature}, max_tokens={max_tokens}, top_k={top_k}")
-    typer.echo(f"Type your prompt and press Enter to generate. Type 'quit' or 'exit' to end.\n")
+    typer.echo(
+        f"Settings: temperature={temperature}, max_tokens={max_tokens}, top_k={top_k}"
+    )
+    typer.echo(
+        f"Type your prompt and press Enter to generate. Type 'quit' or 'exit' to end.\n"
+    )
 
     # Interactive loop
     while True:
         try:
             prompt = typer.prompt(typer.style(">>> ", fg=typer.colors.CYAN, bold=True))
 
-            if prompt.lower() in ['quit', 'exit', 'q']:
+            if prompt.lower() in ["quit", "exit", "q"]:
                 typer.secho("\nGoodbye!", fg=typer.colors.GREEN)
                 break
 
@@ -376,10 +421,13 @@ def interactive(
                 continue
 
             output_text = complete(
-                model, prompt, enc, device,
+                model,
+                prompt,
+                enc,
+                device,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_k=top_k
+                top_k=top_k,
             )
             typer.echo(typer.style(output_text, fg=typer.colors.WHITE, bold=True))
             typer.echo()

@@ -7,7 +7,9 @@ if __name__ == "__main__":
     from training.pretraining.training_utils import PreTrainer
 
     parser = argparse.ArgumentParser(description="Train GPT model")
-    parser.add_argument("--resume", action="store_true", help="Resume training from latest checkpoint")
+    parser.add_argument(
+        "--resume", action="store_true", help="Resume training from latest checkpoint"
+    )
     args = parser.parse_args()
 
     trainer = PreTrainer(resume=args.resume)

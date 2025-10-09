@@ -12,10 +12,11 @@ from dataclasses import dataclass
 def get_gpu_memory():
     """Get the available GPU memory in MB."""
     command = "nvidia-smi --query-gpu=memory.free --format=csv"
-    memory_free_info = sp.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+    memory_free_info = (
+        sp.check_output(command.split()).decode("ascii").split("\n")[:-1][1:]
+    )
     memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
     return memory_free_values
-
 
 
 @dataclass
@@ -39,13 +40,15 @@ class GPTConfig:
 def get_device_config():
     """Detect available device and return optimized settings."""
     if torch.cuda.is_available():
-        
+
         gpu_mem = get_gpu_memory()
         n_gpus = len(gpu_mem)
         print(f"Detected {n_gpus} GPU(s) with memory: {gpu_mem} MB")
-        
+
         if n_gpus > 1:
-            raise NotImplementedError("Multi-GPU support is not implemented in this script.")
+            raise NotImplementedError(
+                "Multi-GPU support is not implemented in this script."
+            )
         elif n_gpus == 1:
             gpu_mem = gpu_mem[0]
             if 9000 <= gpu_mem < 15000:
@@ -68,7 +71,7 @@ def get_device_config():
                 block_size = 512
                 batch_size = 2
                 grad_accum_steps = 16
-                
+
         return {
             "device": "cuda",
             "dtype": "float16",
@@ -79,7 +82,7 @@ def get_device_config():
             "wandb_project": "baby-gpt-cuda",
             "wandb_run_name": "baby-gpt-cuda-run",
         }
-    
+
     elif torch.backends.mps.is_available():
         return {
             "device": "mps",
@@ -167,6 +170,7 @@ def load_config():
     }
     return config
 
+
 def load_sft_config():
     """Load configuration settings for supervised fine-tuning (SFT)."""
     device_config = get_device_config()
@@ -188,47 +192,42 @@ def load_sft_config():
         "seed_offset": seed_offset,
         "ddp_world_size": ddp_world_size,
         "tokens_per_iter": tokens_per_iter,
-
         # I/O settings
-        "out_dir": "out_sft",             # separate output directory
-        "eval_interval": 100,             # evaluate a bit more frequently
+        "out_dir": "out_sft",  # separate output directory
+        "eval_interval": 100,  # evaluate a bit more frequently
         "log_interval": 200,
         "eval_iters": 200,
         "eval_only": False,
         "always_save_checkpoint": True,
-        "init_from": "resume",            # typically resume from a pretrained ckpt
-
+        "init_from": "resume",  # typically resume from a pretrained ckpt
         # Logging
-        "wandb_log": False,               # enable if you want
-        "wandb_project": device_config["wandb_project"].replace("baby-gpt", "baby-gpt-sft"),
+        "wandb_log": False,  # enable if you want
+        "wandb_project": device_config["wandb_project"].replace(
+            "baby-gpt", "baby-gpt-sft"
+        ),
         "wandb_run_name": device_config["wandb_run_name"].replace("run", "sft-run"),
-
         # Training hyperparameters
         "gradient_accumulation_steps": gradient_accumulation_steps,
         "batch_size": batch_size,
         "block_size": block_size,
-
         # Model architecture (match pretrained checkpoint)
         "n_layer": 8,
         "n_head": 16,
         "n_embd": 512,
         "dropout": 0.0,
         "bias": True,
-
         # Optimizer settings
-        "learning_rate": 5e-5,     # smaller LR for SFT (pretraining was 3e-4)
-        "n_epochs": 3,             # usually fewer epochs than pretraining
-        "weight_decay": 0.0,       # often 0 for SFT to avoid over-regularizing
+        "learning_rate": 5e-5,  # smaller LR for SFT (pretraining was 3e-4)
+        "n_epochs": 3,  # usually fewer epochs than pretraining
+        "weight_decay": 0.0,  # often 0 for SFT to avoid over-regularizing
         "beta1": 0.9,
         "beta2": 0.95,
         "grad_clip": 1.0,
-
         # Learning rate schedule
         "decay_lr": True,
         "warmup_iters": 200,
         "lr_decay_iters": 2500,
         "min_lr": 5e-6,
-
         # Device settings
         "device": device_config["device"],
         "dtype": device_config["dtype"],

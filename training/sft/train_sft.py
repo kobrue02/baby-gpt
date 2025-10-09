@@ -32,7 +32,9 @@ class SFTTrainer(Trainer):
         # initialize model
         self.model = self.init_model()
         # Store raw model before any potential compilation
-        self.raw_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
+        self.raw_model = (
+            self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
+        )
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
         self._seen_batches = set()
         self.iter_num = 0
@@ -76,9 +78,7 @@ class SFTTrainer(Trainer):
                 f"but got {len(data)}. Please add more training data or reduce block_size."
             )
 
-        ix = torch.randint(
-            max_start_idx, (self.config["batch_size"],)
-        )
+        ix = torch.randint(max_start_idx, (self.config["batch_size"],))
 
         # Convert tensor to tuple for set membership check
         ix_tuple = tuple(ix.tolist())
@@ -86,9 +86,7 @@ class SFTTrainer(Trainer):
         attempts = 0
 
         while ix_tuple in self._seen_batches and attempts < max_attempts:
-            ix = torch.randint(
-                max_start_idx, (self.config["batch_size"],)
-            )
+            ix = torch.randint(max_start_idx, (self.config["batch_size"],))
             ix_tuple = tuple(ix.tolist())
             attempts += 1
 
@@ -104,22 +102,42 @@ class SFTTrainer(Trainer):
         Generate a batch of data for training or validation.
         Since this is SFT, we also return a mask for the loss.
         """
-        tokens = np.memmap(os.path.join(self.data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r")
-        masks  = np.memmap(os.path.join(self.data_dir, f"{split}_sft_mask.bin"), dtype=np.uint8, mode="r")
+        tokens = np.memmap(
+            os.path.join(self.data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r"
+        )
+        masks = np.memmap(
+            os.path.join(self.data_dir, f"{split}_sft_mask.bin"),
+            dtype=np.uint8,
+            mode="r",
+        )
 
         ix = self.find_unseen_batch(tokens)
-        x = torch.stack([
-            torch.from_numpy(tokens[i : i + self.config["block_size"]].astype(np.int64))
-            for i in ix])
-        y = torch.stack([
-            torch.from_numpy(tokens[i + 1 : i + 1 + self.config["block_size"]].astype(np.int64))
-            for i in ix])
-        m = torch.stack([
-            torch.from_numpy(masks[i + 1 : i + 1 + self.config["block_size"]].astype(np.float32))
-            for i in ix])
+        x = torch.stack(
+            [
+                torch.from_numpy(
+                    tokens[i : i + self.config["block_size"]].astype(np.int64)
+                )
+                for i in ix
+            ]
+        )
+        y = torch.stack(
+            [
+                torch.from_numpy(
+                    tokens[i + 1 : i + 1 + self.config["block_size"]].astype(np.int64)
+                )
+                for i in ix
+            ]
+        )
+        m = torch.stack(
+            [
+                torch.from_numpy(
+                    masks[i + 1 : i + 1 + self.config["block_size"]].astype(np.float32)
+                )
+                for i in ix
+            ]
+        )
 
         return x.to(self.device_type), y.to(self.device_type), m.to(self.device_type)
-
 
     def init_model(self) -> GPTWithMHA:
         """
@@ -128,35 +146,38 @@ class SFTTrainer(Trainer):
         """
         # Determine which checkpoint to load from
         if self.resume:
-            ckpt_path = os.path.join(self.config['out_dir'], 'ckpt.pt')
+            ckpt_path = os.path.join(self.config["out_dir"], "ckpt.pt")
             print(f"Resuming SFT from {ckpt_path}")
         else:
-            ckpt_path = os.path.join('out', 'ckpt.pt')
+            ckpt_path = os.path.join("out", "ckpt.pt")
             print(f"Initializing SFT model from pretrained checkpoint {ckpt_path}")
 
         checkpoint = torch.load(ckpt_path, map_location=self.device_type)
 
         # Extract model configuration from checkpoint
-        model_config = checkpoint['config']
+        model_config = checkpoint["config"]
         model_args = dict(
-            n_layer=model_config['n_layer'],
-            n_head=model_config['n_head'],
-            n_embd=model_config['n_embd'],
-            block_size=model_config['block_size'],
-            bias=model_config['bias'],
+            n_layer=model_config["n_layer"],
+            n_head=model_config["n_head"],
+            n_embd=model_config["n_embd"],
+            block_size=model_config["block_size"],
+            bias=model_config["bias"],
             dropout=0.0,  # Set to 0 for fine-tuning
-            vocab_size=model_config.get('vocab_size', 50304)
+            vocab_size=model_config.get("vocab_size", 50304),
         )
         self.meta_vocab_size = model_config.get("vocab_size", 50304)
-        print("meta_vocab_size =", self.meta_vocab_size,)
+        print(
+            "meta_vocab_size =",
+            self.meta_vocab_size,
+        )
         gptconf = GPTConfig(**model_args)
         model = GPTWithMHA(gptconf)
 
-        state_dict = checkpoint['model']
-        unwanted_prefix = '_orig_mod.'
-        for k,v in list(state_dict.items()):
+        state_dict = checkpoint["model"]
+        unwanted_prefix = "_orig_mod."
+        for k, v in list(state_dict.items()):
             if k.startswith(unwanted_prefix):
-                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+                state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
         model.load_state_dict(state_dict)
         return model.to(self.device_type)
 
@@ -176,7 +197,9 @@ class SFTTrainer(Trainer):
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
 
         if not os.path.exists(checkpoint_path):
-            print(f"No checkpoint found at {checkpoint_path}, starting from pretrained model")
+            print(
+                f"No checkpoint found at {checkpoint_path}, starting from pretrained model"
+            )
             return
 
         print(f"Resuming SFT training from {checkpoint_path}")
@@ -185,10 +208,10 @@ class SFTTrainer(Trainer):
         # Load model state
         state_dict = checkpoint["model"]
         # Remove '_orig_mod.' prefix if present (from compiled models)
-        unwanted_prefix = '_orig_mod.'
+        unwanted_prefix = "_orig_mod."
         for k, v in list(state_dict.items()):
             if k.startswith(unwanted_prefix):
-                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+                state_dict[k[len(unwanted_prefix) :]] = state_dict.pop(k)
 
         # Load into the raw (uncompiled) model
         self.raw_model.load_state_dict(state_dict)
@@ -200,7 +223,9 @@ class SFTTrainer(Trainer):
         self.iter_num = checkpoint["iter_num"]
         self.best_val_loss = checkpoint["best_val_loss"]
 
-        print(f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
+        print(
+            f"Resumed from iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}"
+        )
 
     def _atomic_save_checkpoint(self, checkpoint):
         """Atomically save checkpoint to prevent corruption on interruption."""
@@ -247,16 +272,14 @@ class SFTTrainer(Trainer):
         return out
 
     def _masked_loss(self, logits):
-        """ Compute the SFT loss with masking the prompt tokens. """
+        """Compute the SFT loss with masking the prompt tokens."""
         losses = F.cross_entropy(
-            logits.view(-1, self.meta_vocab_size),
-            self.Y.view(-1),
-            reduction="none"
+            logits.view(-1, self.meta_vocab_size), self.Y.view(-1), reduction="none"
         ).view_as(self.Y)
         return (losses * self.M).sum() / self.M.sum()
-    
+
     def _accumulate_gradients(self) -> bool:
-        """ Accumulate gradients over multiple mini-batches. """
+        """Accumulate gradients over multiple mini-batches."""
         performed_backward = False
         for _ in range(self.config["gradient_accumulation_steps"]):
             with self.ctx:
@@ -272,9 +295,9 @@ class SFTTrainer(Trainer):
             self.scaler.scale(loss).backward()
             performed_backward = True
         return performed_backward
-    
+
     def _clip_gradients(self):
-        """ Clip the gradients to prevent explosion. """
+        """Clip the gradients to prevent explosion."""
         if self.config["grad_clip"] != 0.0:
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
@@ -282,15 +305,15 @@ class SFTTrainer(Trainer):
             )
 
     def _validate_gradients(self) -> bool:
-        """ check for NaN gradients after clipping """
+        """check for NaN gradients after clipping"""
         for _, param in self.model.named_parameters():
             if param.grad is not None and not torch.isfinite(param.grad).all():
                 self.optimizer.zero_grad(set_to_none=True)
                 return False
         return True
-    
+
     def _step(self):
-        """ Step the optimizer and scaler. """
+        """Step the optimizer and scaler."""
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
@@ -331,9 +354,8 @@ class SFTTrainer(Trainer):
             if iter_num > 0:
                 self.save_checkpoint(iter_num)
 
-
     def training_step(self, iter_num=0):
-        """ Perform a single training step. """
+        """Perform a single training step."""
 
         # determine and set the learning rate for this iteration
         self.update_optimizer_lr(iter_num)
@@ -360,7 +382,6 @@ class SFTTrainer(Trainer):
         # get a new random unseen batch
         self.X, self.Y, self.M = self.get_batch("train")
 
-    
     def train(self):
         """
         Train the model.

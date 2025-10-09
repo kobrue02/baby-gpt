@@ -23,8 +23,9 @@ def test_get_batch_returns_three_tensors():
             f.write(train_masks.tobytes())
 
         # Mock trainer with minimal setup
-        with patch('training.sft.train_sft.SFTTrainer.__init__', lambda self: None):
+        with patch("training.sft.train_sft.SFTTrainer.__init__", lambda self: None):
             from training.sft.train_sft import SFTTrainer
+
             trainer = SFTTrainer()
             trainer.config = {"block_size": block_size, "batch_size": 2}
             trainer.device_type = "cpu"
@@ -45,8 +46,9 @@ def test_get_batch_returns_three_tensors():
 
 def test_find_unseen_batch_tracks_batches():
     """Test that find_unseen_batch adds to seen_batches set."""
-    with patch('training.sft.train_sft.SFTTrainer.__init__', lambda self: None):
+    with patch("training.sft.train_sft.SFTTrainer.__init__", lambda self: None):
         from training.sft.train_sft import SFTTrainer
+
         trainer = SFTTrainer()
         trainer.config = {"block_size": 32, "batch_size": 2}
         trainer._seen_batches = set()

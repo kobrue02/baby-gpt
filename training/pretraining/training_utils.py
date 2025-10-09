@@ -11,7 +11,9 @@ import torch
 import warnings
 
 # Suppress Pydantic warnings about Field attributes
-warnings.filterwarnings("ignore", category=UserWarning, module="pydantic._internal._generate_schema")
+warnings.filterwarnings(
+    "ignore", category=UserWarning, module="pydantic._internal._generate_schema"
+)
 
 from tqdm import tqdm
 from training.classes.trainer import Trainer
@@ -33,9 +35,13 @@ class PreTrainer(Trainer):
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
         self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
         # initialize model
-        self.model = self.init_model(self.meta_vocab_size, self.config.get("compile", True))
+        self.model = self.init_model(
+            self.meta_vocab_size, self.config.get("compile", True)
+        )
         # Store raw model before compilation for checkpointing
-        self.raw_model = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
+        self.raw_model = (
+            self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
+        )
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
         # load checkpoint if resuming
         self.epoch = 0
@@ -46,10 +52,12 @@ class PreTrainer(Trainer):
 
         # Load dataset size for epoch-based training
         self.train_data_len = self._get_dataset_length("train")
-        self.steps_per_epoch = self.train_data_len // (self.config["batch_size"] * self.config["block_size"])
+        self.steps_per_epoch = self.train_data_len // (
+            self.config["batch_size"] * self.config["block_size"]
+        )
         self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
 
-        if self.resume: # load existing checkpoint
+        if self.resume:  # load existing checkpoint
             self.load_checkpoint()
 
         # initialize logger
@@ -91,21 +99,29 @@ class PreTrainer(Trainer):
         """Get the length of the dataset in tokens."""
         if split == "train":
             data = np.memmap(
-                os.path.join(self.data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "train_pretrain.bin"),
+                dtype=np.uint16,
+                mode="r",
             )
         else:
             data = np.memmap(
-                os.path.join(self.data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "val_pretrain.bin"),
+                dtype=np.uint16,
+                mode="r",
             )
         return len(data)
 
     def _create_dataloader_indices(self, data_len: int):
         """Create shuffled indices for epoch-based training."""
         # Calculate number of sequences we can extract
-        num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
+        num_sequences = (data_len - self.config["block_size"]) // self.config[
+            "block_size"
+        ]
 
         # Create sequential starting indices
-        indices = torch.arange(0, num_sequences * self.config["block_size"], self.config["block_size"])
+        indices = torch.arange(
+            0, num_sequences * self.config["block_size"], self.config["block_size"]
+        )
 
         # Shuffle indices for this epoch
         shuffled_indices = indices[torch.randperm(len(indices))]
@@ -125,11 +141,15 @@ class PreTrainer(Trainer):
         # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
         if split == "train":
             data = np.memmap(
-                os.path.join(self.data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "train_pretrain.bin"),
+                dtype=np.uint16,
+                mode="r",
             )
         else:
             data = np.memmap(
-                os.path.join(self.data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "val_pretrain.bin"),
+                dtype=np.uint16,
+                mode="r",
             )
 
         # Get batch_size indices from the shuffled index array
@@ -138,12 +158,22 @@ class PreTrainer(Trainer):
         batch_indices = indices[start_idx:end_idx]
 
         # Load sequences at these positions
-        x = torch.stack([
-            torch.from_numpy((data[i : i + self.config["block_size"]]).astype(np.int64))
-            for i in batch_indices])
-        y = torch.stack([
-            torch.from_numpy((data[i + 1 : i + 1 + self.config["block_size"]]).astype(np.int64))
-            for i in batch_indices])
+        x = torch.stack(
+            [
+                torch.from_numpy(
+                    (data[i : i + self.config["block_size"]]).astype(np.int64)
+                )
+                for i in batch_indices
+            ]
+        )
+        y = torch.stack(
+            [
+                torch.from_numpy(
+                    (data[i + 1 : i + 1 + self.config["block_size"]]).astype(np.int64)
+                )
+                for i in batch_indices
+            ]
+        )
 
         x, y = x.to(self.device_type), y.to(self.device_type)
         return x, y
@@ -161,7 +191,7 @@ class PreTrainer(Trainer):
             bias=self.config["bias"],
             dropout=self.config["dropout"],
         )
-        
+
         # determine the vocab size we'll use for training
         if meta_vocab_size is None:
             print(
@@ -215,13 +245,14 @@ class PreTrainer(Trainer):
             out[split] = losses.mean()
         self.model.train()
         return out
-
-    def forward_backward(self, train_indices, batch_idx):
-        # forward backward update, with optional gradient accumulation
+    
+    def _perform_gradient_accumulation_steps(self, train_indices, batch_idx):
         performed_backward = False
         for micro_step in range(self.config["gradient_accumulation_steps"]):
             # Get next batch for gradient accumulation
-            current_batch_idx = batch_idx * self.config["gradient_accumulation_steps"] + micro_step
+            current_batch_idx = (
+                batch_idx * self.config["gradient_accumulation_steps"] + micro_step
+            )
             if current_batch_idx >= len(train_indices) // self.config["batch_size"]:
                 break  # Don't go past the epoch
 
@@ -232,17 +263,40 @@ class PreTrainer(Trainer):
                 loss = loss / self.config["gradient_accumulation_steps"]
                 self.observed_tokens_count += torch.numel(self.X)
 
-            # Check for NaN/inf loss before backward pass
+            # check for NaN/inf loss before backward pass
             if not torch.isfinite(loss):
                 self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
-                self.pbar.set_postfix_str("skipping this batch to prevent gradient corruption")
+                self.pbar.set_postfix_str(
+                    "skipping this batch to prevent gradient corruption"
+                )
                 continue
 
             self.scaler.scale(loss).backward()
             performed_backward = True
             self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
+        return performed_backward
+    
+    def _validate_gradients_clipped(self):
+        for name, param in self.model.named_parameters():
+            if param.grad is not None and not torch.isfinite(param.grad).all():
+                self.pbar.set_postfix_str(f"corrupted gradient detected in {name}")
+                self.pbar.set_postfix_str(
+                    "Skipping optimizer step due to NaN gradients"
+                )
+                self.optimizer.zero_grad(set_to_none=True)
+                return False
+        return True
+    
+    def _step(self):
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        self.optimizer.zero_grad(set_to_none=True)
 
-        # Skip optimizer step if no backward passes were performed
+    def forward_backward(self, train_indices, batch_idx):
+        # forward backward update, with gradient accumulation
+        performed_backward = self._perform_gradient_accumulation_steps(train_indices, batch_idx)
+        
+        # skip optimizer step if no backward passes were performed
         if not performed_backward:
             self.optimizer.zero_grad(set_to_none=True)
             return
@@ -255,17 +309,11 @@ class PreTrainer(Trainer):
             )
 
         # Check for NaN gradients after clipping
-        for name, param in self.model.named_parameters():
-            if param.grad is not None and not torch.isfinite(param.grad).all():
-                self.pbar.set_postfix_str(f"corrupted gradient detected in {name}")
-                self.pbar.set_postfix_str("Skipping optimizer step due to NaN gradients")
-                self.optimizer.zero_grad(set_to_none=True)
-                return
-
-        # step the optimizer and scaler
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        self.optimizer.zero_grad(set_to_none=True)
+        if not self._validate_gradients_clipped():
+            return
+        else:
+            # step the optimizer and scaler
+            self._step()
 
     def _validate_checkpoint(self, checkpoint_path):
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
@@ -274,13 +322,13 @@ class PreTrainer(Trainer):
             return
         print(f"Resuming training from {checkpoint_path}")
         return torch.load(checkpoint_path, map_location=self.device_type)
-    
+
     def _load_states(self, checkpoint):
         # Load model state
         state_dict = checkpoint["model"]
         for k in list(state_dict.keys()):
-            if k.startswith('_orig_mod.'):
-                state_dict[k[len('_orig_mod.'):]] = state_dict.pop(k)
+            if k.startswith("_orig_mod."):
+                state_dict[k[len("_orig_mod.") :]] = state_dict.pop(k)
 
         # Load into the raw (uncompiled) model
         self.raw_model.load_state_dict(state_dict)
@@ -289,7 +337,9 @@ class PreTrainer(Trainer):
         self.iter_num = checkpoint.get("iter_num", 0)
         self.best_val_loss = checkpoint["best_val_loss"]
         self.observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
-        print(f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}")
+        print(
+            f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}"
+        )
 
     def load_checkpoint(self):
         """Load the latest checkpoint from the output directory."""
@@ -301,11 +351,12 @@ class PreTrainer(Trainer):
             self._load_states(checkpoint)
 
     def _atomic_save_checkpoint(self, checkpoint):
+        """ Atomically save the checkpoint to prevent corruption on interruption. """
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
         temp_path = checkpoint_path + ".tmp"
         torch.save(checkpoint, temp_path)
         os.replace(temp_path, checkpoint_path)
-    
+
     def save_checkpoint(self, epoch, iter_num):
         checkpoint = {
             "model": self.raw_model.state_dict(),
@@ -340,7 +391,6 @@ class PreTrainer(Trainer):
             if iter_num > 0:
                 self.save_checkpoint(epoch, iter_num)
 
-
     def training_step(self, epoch, iter_num, train_indices, batch_idx):
         """Perform a single training step."""
 
@@ -360,27 +410,40 @@ class PreTrainer(Trainer):
 
         # else, perform the forward/backward pass and clear memory
         self.forward_backward(train_indices, batch_idx)
+        
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
 
+    def _runtime_error_exit(self, e: RuntimeError):
+        """Handle RuntimeError during training by saving checkpoint and exiting gracefully."""
+        self.pbar.close()
+
+        print(f"Error during training step: {e}")
+        print(str(e))
+        print("Memory usage summary:")
+
+        if self.device_type == "cuda":
+            print(torch.cuda.memory_summary())
+        elif self.device_type == "mps":
+            print(get_mps_memory_info())
+
+        print("Exiting from training.")
 
     def train(self):
         """
         Train the model using epoch-based training.
         """
-        self.pbar = tqdm(total=self.total_steps, initial=self.iter_num, desc="Training")
-
         for epoch in range(self.epoch, self.config["n_epochs"]):
-            print(f"\n=== Epoch {epoch + 1}/{self.config['n_epochs']} ===")
-
-            # Shuffle indices for this epoch
             train_indices = self._create_dataloader_indices(self.train_data_len)
-
-            # Calculate batches per epoch accounting for gradient accumulation
-            batches_per_epoch = (len(train_indices) // self.config["batch_size"]) // self.config["gradient_accumulation_steps"]
-
+            batches_per_epoch = (
+                len(train_indices) // self.config["batch_size"]
+            ) // self.config["gradient_accumulation_steps"]
+            self.pbar = tqdm(
+                total=batches_per_epoch,
+                desc=f"epoch {epoch+1}/{self.config['n_epochs']}",
+            )
             try:
                 for batch_idx in range(batches_per_epoch):
                     self.training_step(epoch, self.iter_num, train_indices, batch_idx)
@@ -392,7 +455,7 @@ class PreTrainer(Trainer):
                     )
                     self.iter_num += 1
 
-                # Save checkpoint at end of epoch
+                # save checkpoint at end of epoch
                 if self.config["master_process"]:
                     self.save_checkpoint(epoch + 1, self.iter_num)
 
@@ -401,16 +464,9 @@ class PreTrainer(Trainer):
                 self.pbar.close()
                 print("Exiting from training early.")
                 break
+
             except RuntimeError as e:
-                self.pbar.close()
-                print(f"Error during training step: {e}")
-                print(str(e))
-                print("Memory usage summary:")
-                if self.device_type == "cuda":
-                    print(torch.cuda.memory_summary())
-                elif self.device_type == "mps":
-                    print(get_mps_memory_info())
-                print("Exiting from training.")
+                self._runtime_error_exit(e)
                 break
 
         self.pbar.close()
