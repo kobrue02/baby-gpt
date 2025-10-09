@@ -467,7 +467,6 @@ class PreTrainer(Trainer):
                     self.training_step(epoch, self.iter_num, train_indices, batch_idx)
                     self.pbar.update()
                     self.pbar.set_postfix_str(
-                        f"epoch {epoch + 1}/{self.config['n_epochs']}, "
                         f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, "
                         f"tokens {self.observed_tokens_count:,}"
                     )
