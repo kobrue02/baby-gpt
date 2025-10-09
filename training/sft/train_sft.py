@@ -61,8 +61,16 @@ class SFTTrainer(Trainer):
         """
         Find a new unseen batch of data indices.
         """
+        # Ensure we have enough data for at least one block
+        max_start_idx = len(data) - self.config["block_size"]
+        if max_start_idx < 1:
+            raise ValueError(
+                f"Data too small: need at least {self.config['block_size'] + 1} tokens, "
+                f"but got {len(data)}. Please add more training data or reduce block_size."
+            )
+
         ix = torch.randint(
-            len(data) - self.config["block_size"], (self.config["batch_size"],)
+            max_start_idx, (self.config["batch_size"],)
         )
 
         # Convert tensor to tuple for set membership check
@@ -72,7 +80,7 @@ class SFTTrainer(Trainer):
 
         while ix_tuple in self._seen_batches and attempts < max_attempts:
             ix = torch.randint(
-                len(data) - self.config["block_size"], (self.config["batch_size"],)
+                max_start_idx, (self.config["batch_size"],)
             )
             ix_tuple = tuple(ix.tolist())
             attempts += 1

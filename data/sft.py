@@ -3,7 +3,7 @@ from datasets import load_dataset, DatasetDict, Dataset
 from data.utils import to_bins, process_sft
 from tqdm import tqdm
 
-def load_general_knowledge(n_rows=1000000, test_size=0.001, seed=42):
+def load_general_knowledge(n_rows=1000000, test_size=0.1, seed=42):
     """
     Load the General-Knowledge dataset and return train/val splits.
 
@@ -58,6 +58,14 @@ def create_sft_dataset(n_rows=10000):
 
     split_dataset = split_dataset.filter(is_valid, desc="Filtering invalid examples")
     print(f"Kept {len(split_dataset['train'])} train and {len(split_dataset['val'])} val examples")
+
+    # Ensure we have enough validation examples
+    min_val_examples = 100
+    if len(split_dataset['val']) < min_val_examples:
+        raise ValueError(
+            f"Not enough validation examples: got {len(split_dataset['val'])}, "
+            f"need at least {min_val_examples}. Try loading more rows or increasing test_size."
+        )
 
     print("Tokenizing dataset with SFT format (including masks)...")
     tokenized = split_dataset.map(
