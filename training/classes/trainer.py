@@ -16,7 +16,7 @@ class Trainer(ABC):
     def __init__(self):
         self.config: Dict[str, Any]
         self.load_and_validate_config()
-        
+
         self.device_type: str
         self.latest_checkpoint: dict
         self.best_val_loss: float
@@ -24,10 +24,9 @@ class Trainer(ABC):
         self.Y: torch.Tensor
         self.lr: float
         self.optimizer: torch.optim.Optimizer
-        self.scaler: torch.cuda.amp.GradScaler
+        self.scaler: torch.cuda.amp.GradScaler | torch.amp.GradScaler  # type: ignore
         self.model: Any
         self.raw_model: Any
-
 
     def load_and_validate_config(self):
         """
@@ -55,15 +54,20 @@ class Trainer(ABC):
             "bfloat16": torch.bfloat16,
             "float16": torch.float16,
         }[self.config["dtype"]]
-        if torch.__version__ >= "2.4": # load autocast from the correct place depending on torch version
-            ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype) # type: ignore
+        if (
+            torch.__version__ >= "2.4"
+        ):  # load autocast from the correct place depending on torch version
+            ctx = torch.amp.autocast(device_type=device_type, dtype=ptdtype)  # type: ignore
         else:
             ctx = torch.cuda.amp.autocast(dtype=ptdtype)  # type: ignore
         return device_type, ptdtype, ctx
 
     def get_batch(
         self, split: str, data_dir="data"
-    ) -> Tuple[torch.Tensor, torch.Tensor] | Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> (
+        Tuple[torch.Tensor, torch.Tensor]
+        | Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ):
         """
         Generate a batch of data of inputs x and targets y with np.memmap
         Args:
@@ -135,7 +139,6 @@ class Trainer(ABC):
         return self.config["min_lr"] + coeff * (
             self.config["learning_rate"] - self.config["min_lr"]
         )
-
 
     def update_optimizer_lr(self, iter_num):
         """

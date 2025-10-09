@@ -3,6 +3,7 @@ from datasets import load_dataset, DatasetDict, Dataset
 from data.utils import to_bins, process_sft
 from tqdm import tqdm
 
+
 def load_general_knowledge(n_rows=1000000, test_size=0.1, seed=42):
     """
     Load the General-Knowledge dataset and return train/val splits.
@@ -21,21 +22,18 @@ def load_general_knowledge(n_rows=1000000, test_size=0.1, seed=42):
     ds = load_dataset(ds_key, split="train", streaming=True)
 
     # Take first n_rows examples
-    ds_list = list(tqdm(ds.take(n_rows), total=n_rows, desc="Loading examples")) # type: ignore
+    ds_list = list(tqdm(ds.take(n_rows), total=n_rows, desc="Loading examples"))  # type: ignore
     ds = Dataset.from_list(ds_list)
 
     # Keep only Question and Answer columns
-    columns_to_keep = ['Question', 'Answer']
+    columns_to_keep = ["Question", "Answer"]
     columns_to_remove = [col for col in ds.column_names if col not in columns_to_keep]
     if columns_to_remove:
         ds = ds.remove_columns(columns_to_remove)
 
     # Create train/val split
     splits = ds.train_test_split(test_size=test_size, seed=seed)
-    split_dataset = DatasetDict({
-        "train": splits["train"],
-        "val": splits["test"]
-    })
+    split_dataset = DatasetDict({"train": splits["train"], "val": splits["test"]})
 
     return split_dataset
 
@@ -49,19 +47,27 @@ def create_sft_dataset(n_rows=10000):
 
     # Filter out examples with None or non-string Question/Answer
     print("Filtering out invalid examples...")
+
     def is_valid(example):
-        q = example['Question']
-        a = example['Answer']
-        return (q is not None and a is not None and
-                isinstance(q, str) and isinstance(a, str) and
-                len(q.strip()) > 0 and len(a.strip()) > 0)
+        q = example["Question"]
+        a = example["Answer"]
+        return (
+            q is not None
+            and a is not None
+            and isinstance(q, str)
+            and isinstance(a, str)
+            and len(q.strip()) > 0
+            and len(a.strip()) > 0
+        )
 
     split_dataset = split_dataset.filter(is_valid, desc="Filtering invalid examples")
-    print(f"Kept {len(split_dataset['train'])} train and {len(split_dataset['val'])} val examples")
+    print(
+        f"Kept {len(split_dataset['train'])} train and {len(split_dataset['val'])} val examples"
+    )
 
     # Ensure we have enough validation examples
     min_val_examples = 100
-    if len(split_dataset['val']) < min_val_examples:
+    if len(split_dataset["val"]) < min_val_examples:
         raise ValueError(
             f"Not enough validation examples: got {len(split_dataset['val'])}, "
             f"need at least {min_val_examples}. Try loading more rows or increasing test_size."
@@ -70,11 +76,11 @@ def create_sft_dataset(n_rows=10000):
     print("Tokenizing dataset with SFT format (including masks)...")
     tokenized = split_dataset.map(
         process_sft,
-        remove_columns=['Question', 'Answer'],
+        remove_columns=["Question", "Answer"],
         desc="Processing SFT examples",
         batched=True,  # Use batched processing
         batch_size=1000,
-        num_proc=1
+        num_proc=1,
     )
 
     print("Saving tokenized dataset to binary files...")
@@ -83,7 +89,9 @@ def create_sft_dataset(n_rows=10000):
     return tokenized
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     n_rows = int(sys.argv[1] if len(sys.argv) > 1 else 10000)
     create_sft_dataset(n_rows)
-    print("Done. Now you can fine tune a model on the dataset using `python -m training.sft`")
+    print(
+        "Done. Now you can fine tune a model on the dataset using `python -m training.sft`"
+    )

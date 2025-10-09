@@ -63,6 +63,8 @@ class Block(nn.Module):
             config.n_head,
             dropout=config.attn_pdrop,
             bias=config.bias,
+            apply_rotary_emb=config.use_rotary,
+            config=config,
         )
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
@@ -71,6 +73,6 @@ class Block(nn.Module):
     def forward(
         self, x: Float[Tensor, "batch_size sequence_length n_embd"]
     ) -> Float[Tensor, "batch_size sequence_length n_embd"]:
-        x = x + self.attn( self.ln_1(x), is_causal=True)
+        x = x + self.attn(self.ln_1(x), is_causal=True)
         x = x + self.mlp(self.ln_2(x))
         return x

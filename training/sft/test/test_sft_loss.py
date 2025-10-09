@@ -6,8 +6,9 @@ import torch.nn.functional as F
 
 def test_masked_loss_basic():
     """Test that masked loss correctly zeros out prompt tokens."""
-    with patch('training.sft.train_sft.SFTTrainer.__init__', lambda self: None):
+    with patch("training.sft.train_sft.SFTTrainer.__init__", lambda self: None):
         from training.sft.train_sft import SFTTrainer
+
         trainer = SFTTrainer()
         trainer.meta_vocab_size = 100
         trainer.Y = torch.randint(0, 100, (2, 10))
@@ -24,8 +25,9 @@ def test_masked_loss_basic():
 
 def test_masked_loss_all_masked():
     """Test that fully masked input produces NaN (0/0)."""
-    with patch('training.sft.train_sft.SFTTrainer.__init__', lambda self: None):
+    with patch("training.sft.train_sft.SFTTrainer.__init__", lambda self: None):
         from training.sft.train_sft import SFTTrainer
+
         trainer = SFTTrainer()
         trainer.meta_vocab_size = 100
         trainer.Y = torch.randint(0, 100, (2, 10))
@@ -40,8 +42,9 @@ def test_masked_loss_all_masked():
 
 def test_masked_loss_no_masking():
     """Test that no masking equals standard cross entropy."""
-    with patch('training.sft.train_sft.SFTTrainer.__init__', lambda self: None):
+    with patch("training.sft.train_sft.SFTTrainer.__init__", lambda self: None):
         from training.sft.train_sft import SFTTrainer
+
         trainer = SFTTrainer()
         trainer.meta_vocab_size = 100
         trainer.Y = torch.randint(0, 100, (2, 10))
@@ -52,9 +55,7 @@ def test_masked_loss_no_masking():
 
         # Compare to standard cross entropy
         standard_loss = F.cross_entropy(
-            logits.view(-1, 100),
-            trainer.Y.view(-1),
-            reduction="mean"
+            logits.view(-1, 100), trainer.Y.view(-1), reduction="mean"
         )
 
         assert torch.allclose(masked_loss, standard_loss, rtol=1e-5)

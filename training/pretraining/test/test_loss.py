@@ -13,10 +13,11 @@ def test_goldfish_loss_static():
     targets = torch.randint(0, C, (B, T))
 
     loss = compute_goldfish_loss(
-        logits, targets,
+        logits,
+        targets,
         strategy=GoldfishStrategy.STATIC,
         drop_frequency=4,
-        hash_context_width=10
+        hash_context_width=10,
     )
 
     assert loss.shape == torch.Size([])
@@ -41,9 +42,7 @@ def test_goldfish_loss_assertions():
     # Test hash context width assertion
     with pytest.raises(AssertionError):
         compute_goldfish_loss(
-            logits, targets,
-            strategy=GoldfishStrategy.RANDOM,
-            hash_context_width=5
+            logits, targets, strategy=GoldfishStrategy.RANDOM, hash_context_width=5
         )
 
     # Test batch size mismatch
