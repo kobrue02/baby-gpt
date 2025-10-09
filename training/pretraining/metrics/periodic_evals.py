@@ -1,20 +1,25 @@
-import evaluate
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
+from typing import List, Any
+import torch
+import math
 
-from typing import List
 
 class PeriodicEval:
     
     def __init__(self, model_id: str):
         self.model_id = model_id
-        self.pplx = evaluate.load("perplexity", module_type="metric")
+        self.tokenizer = GPT2Tokenizer.from_pretrained(self.model_id)
+        self.model = GPT2LMHeadModel.from_pretrained(self.model_id)
+        self.model.eval()
     
     def perplexity(self, input_texts: List[str]) -> float:
-        """ Compute the perplexity of the model on the given input texts. """
-        results = self.pplx.compute(model_id=self.model_id,
-                                    add_start_token=False,
-                                    predictions=input_texts)
-        if not results:
-            raise ValueError("No results returned from perplexity evaluation.")
-        
-        mean_pplx = results['mean_perplexity']
-        return mean_pplx
+        encodings = self.tokenizer(input_texts, return_tensors="pt")
+
+        # GPT-2 needs both inputs and labels to compute loss
+        with torch.no_grad():
+            outputs = self.model(**encodings, labels=encodings["input_ids"])
+            loss = outputs.loss
+            perplexity = math.exp(loss.item())
+
+        return perplexity
+
