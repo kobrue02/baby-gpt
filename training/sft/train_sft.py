@@ -23,10 +23,11 @@ class SFTTrainer(Trainer):
     Trainer class to handle model training.
     """
 
-    def __init__(self):
+    def __init__(self, data_dir="data"):
         super().__init__()
+        self.data_dir = data_dir
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
-        self.meta_vocab_size, _, _ = self.derive_vocab_size("data")
+        self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
         # initialize model
         self.model = self.init_model()
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
@@ -92,13 +93,13 @@ class SFTTrainer(Trainer):
         self._seen_batches.add(ix_tuple)
         return ix
 
-    def get_batch(self, split: str, data_dir="data"):
+    def get_batch(self, split: str):
         """
         Generate a batch of data for training or validation.
         Since this is SFT, we also return a mask for the loss.
         """
-        tokens = np.memmap(os.path.join(data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r")
-        masks  = np.memmap(os.path.join(data_dir, f"{split}_sft_mask.bin"), dtype=np.uint8, mode="r")
+        tokens = np.memmap(os.path.join(self.data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r")
+        masks  = np.memmap(os.path.join(self.data_dir, f"{split}_sft_mask.bin"), dtype=np.uint8, mode="r")
 
         ix = self.find_unseen_batch(tokens)
         x = torch.stack([
@@ -160,13 +161,13 @@ class SFTTrainer(Trainer):
 
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
-    def estimate_loss(self, data_dir="data"):
+    def estimate_loss(self):
         out = {}
         self.model.eval()
         for split in ["train", "val"]:
             losses = torch.zeros(self.config["eval_iters"])
             for k in range(self.config["eval_iters"]):
-                self.X, self.Y, self.M = self.get_batch(split, data_dir)
+                self.X, self.Y, self.M = self.get_batch(split)
                 with self.ctx:
                     logits, _ = self.model(self.X, self.Y)
                     loss = self._masked_loss(logits)
@@ -183,9 +184,10 @@ class SFTTrainer(Trainer):
             reduction="none"
         ).view_as(self.Y)
         return (losses * self.M).sum() / self.M.sum()
-
-    def forward_backward(self, data_dir="data"):
-        # forward backward update, with optional gradient accumulation
+    
+    def _accumulate_gradients(self) -> bool:
+        """ Accumulate gradients over multiple mini-batches. """
+        performed_backward = False
         for _ in range(self.config["gradient_accumulation_steps"]):
             with self.ctx:
                 logits, _ = self.model(self.X, self.Y)
@@ -194,33 +196,57 @@ class SFTTrainer(Trainer):
 
             # Check for NaN/inf loss before backward pass
             if not torch.isfinite(loss):
-                self.X, self.Y, self.M = self.get_batch("train", data_dir)
+                self.X, self.Y, self.M = self.get_batch("train")
                 continue
 
             self.scaler.scale(loss).backward()
-
-        # clip the gradient
+            performed_backward = True
+        return performed_backward
+    
+    def _clip_gradients(self):
+        """ Clip the gradients to prevent explosion. """
         if self.config["grad_clip"] != 0.0:
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
 
-        # Check for NaN gradients after clipping
-        for name, param in self.model.named_parameters():
+    def _validate_gradients(self) -> bool:
+        """ check for NaN gradients after clipping """
+        for _, param in self.model.named_parameters():
             if param.grad is not None and not torch.isfinite(param.grad).all():
                 self.optimizer.zero_grad(set_to_none=True)
-                return
-
-        # step the optimizer and scaler
+                return False
+        return True
+    
+    def _step(self):
+        """ Step the optimizer and scaler. """
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
-        # get a new random unseen batch
-        self.X, self.Y, self.M = self.get_batch("train", data_dir)
 
-    def eval_step(self, data_dir="data", iter_num=0):
-        losses = self.estimate_loss(data_dir)
+    def forward_backward(self):
+        # forward backward update, with gradient accumulation
+        performed_backward = self._accumulate_gradients()
+
+        # skip optimizer step if no backward passes were performed
+        if not performed_backward:
+            self.optimizer.zero_grad(set_to_none=True)
+            return
+
+        # clip the gradient
+        self._clip_gradients()
+
+        # if any gradients are NaN/inf, skip this update
+        if not self._validate_gradients():
+            self.optimizer.zero_grad(set_to_none=True)
+            return
+
+        # step the optimizer and scaler
+        self._step()
+
+    def eval_step(self, iter_num=0):
+        losses = self.estimate_loss()
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
@@ -236,8 +262,8 @@ class SFTTrainer(Trainer):
                 self.save_checkpoint(iter_num)
 
 
-    def training_step(self, iter_num=0, data_dir="data"):
-        """Perform a single training step."""
+    def training_step(self, iter_num=0):
+        """ Perform a single training step. """
 
         # determine and set the learning rate for this iteration
         self.update_optimizer_lr(iter_num)
@@ -247,30 +273,34 @@ class SFTTrainer(Trainer):
             iter_num % self.config["eval_interval"] == 0
             and self.config["master_process"]
         ):
-            self.eval_step(data_dir, iter_num)
+            self.eval_step(iter_num)
 
         # at the end of training, we can skip the final forward/backward pass
         if iter_num == 0 and self.config["eval_only"]:
             return
 
         # else, perform the forward/backward pass and clear memory
-        self.forward_backward(data_dir)
+        self.forward_backward()
+
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
 
+        # get a new random unseen batch
+        self.X, self.Y, self.M = self.get_batch("train")
+
     
-    def train(self, data_dir="data"):
+    def train(self):
         """
         Train the model.
         """
-        self.X, self.Y, self.M = self.get_batch("train", data_dir)
+        self.X, self.Y, self.M = self.get_batch("train")
         self.raw_model = self.model
         self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
         while self.iter_num < self.config["max_iters"]:
             try:
-                self.training_step(self.iter_num, data_dir)
+                self.training_step(self.iter_num)
                 self.pbar.update()
                 self.iter_num += 1
             except KeyboardInterrupt:

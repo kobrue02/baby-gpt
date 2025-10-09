@@ -26,11 +26,12 @@ class PreTrainer(Trainer):
     Trainer class to handle model training.
     """
 
-    def __init__(self, resume=False):
+    def __init__(self, resume=False, data_dir="data"):
         super().__init__()
         self.resume = resume
+        self.data_dir = data_dir
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
-        self.meta_vocab_size, _, _ = self.derive_vocab_size("data")
+        self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
         # initialize model
         self.model = self.init_model(self.meta_vocab_size, self.config.get("compile", True))
         # Store raw model before compilation for checkpointing
@@ -106,16 +107,16 @@ class PreTrainer(Trainer):
         self._seen_batches.add(ix_tuple)
         return ix
 
-    def get_batch(self, split: str, data_dir="data"):
+    def get_batch(self, split: str):
         # We recreate np.memmap every batch to avoid a memory leak, as per
         # https://stackoverflow.com/questions/45132940/numpy-memmap-memory-usage-want-to-iterate-once/61472122#61472122
         if split == "train":
             data = np.memmap(
-                os.path.join(data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "train_pretrain.bin"), dtype=np.uint16, mode="r"
             )
         else:
             data = np.memmap(
-                os.path.join(data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
+                os.path.join(self.data_dir, "val_pretrain.bin"), dtype=np.uint16, mode="r"
             )
 
         ix = self.find_unseen_batch(data)
@@ -177,13 +178,13 @@ class PreTrainer(Trainer):
 
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
-    def estimate_loss(self, data_dir="data"):
+    def estimate_loss(self):
         out = {}
         self.model.eval()
         for split in ["train", "val"]:
             losses = torch.zeros(self.config["eval_iters"])
             for k in range(self.config["eval_iters"]):
-                self.X, self.Y = self.get_batch(split, data_dir)
+                self.X, self.Y = self.get_batch(split)
                 with self.ctx:
                     _, loss = self.model(self.X, self.Y)
                 losses[k] = loss.item()
@@ -191,8 +192,9 @@ class PreTrainer(Trainer):
         self.model.train()
         return out
 
-    def forward_backward(self, data_dir="data"):
+    def forward_backward(self):
         # forward backward update, with optional gradient accumulation
+        performed_backward = False
         for _ in range(self.config["gradient_accumulation_steps"]):
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
@@ -204,13 +206,19 @@ class PreTrainer(Trainer):
                 self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
                 self.pbar.set_postfix_str("skipping this batch to prevent gradient corruption")
                 # Get a new batch and skip this iteration
-                self.X, self.Y = self.get_batch("train", data_dir)
+                self.X, self.Y = self.get_batch("train")
                 continue
 
             self.scaler.scale(loss).backward()
+            performed_backward = True
             self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
             # get a new random unseen batch
-            self.X, self.Y = self.get_batch("train", data_dir)
+            self.X, self.Y = self.get_batch("train")
+
+        # Skip optimizer step if no backward passes were performed
+        if not performed_backward:
+            self.optimizer.zero_grad(set_to_none=True)
+            return
 
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
@@ -284,8 +292,8 @@ class PreTrainer(Trainer):
 
         self.latest_checkpoint = checkpoint
 
-    def eval_step(self, data_dir="data", iter_num=0):
-        losses = self.estimate_loss(data_dir)
+    def eval_step(self, iter_num=0):
+        losses = self.estimate_loss()
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
@@ -301,7 +309,7 @@ class PreTrainer(Trainer):
                 self.save_checkpoint(iter_num)
 
 
-    def training_step(self, iter_num=0, data_dir="data"):
+    def training_step(self, iter_num=0):
         """Perform a single training step."""
 
         # determine and set the learning rate for this iteration
@@ -312,29 +320,29 @@ class PreTrainer(Trainer):
             iter_num % self.config["eval_interval"] == 0
             and self.config["master_process"]
         ):
-            self.eval_step(data_dir, iter_num)
+            self.eval_step(iter_num)
 
         # at the end of training, we can skip the final forward/backward pass
         if iter_num == 0 and self.config["eval_only"]:
             return
 
         # else, perform the forward/backward pass and clear memory
-        self.forward_backward(data_dir)
+        self.forward_backward()
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
 
     
-    def train(self, data_dir="data"):
+    def train(self):
         """
         Train the model.
         """
-        self.X, self.Y = self.get_batch("train", data_dir)
+        self.X, self.Y = self.get_batch("train")
         self.pbar = tqdm(total=self.config["max_iters"], initial=self.iter_num)
         while self.iter_num < self.config["max_iters"]:
             try:
-                self.training_step(self.iter_num, data_dir)
+                self.training_step(self.iter_num)
                 self.pbar.update()
                 self.pbar.set_postfix_str(f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, tokens {self.observed_tokens_count:,}")
                 self.iter_num += 1
