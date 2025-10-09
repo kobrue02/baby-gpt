@@ -13,10 +13,12 @@ class PeriodicEval:
         self.model.eval()
     
     def perplexity(self, encodings) -> float:
+        # Convert tiktoken encoding (list of token IDs) to tensor
+        input_ids = torch.tensor([encodings])  # Add batch dimension
 
         # GPT-2 needs both inputs and labels to compute loss
         with torch.no_grad():
-            outputs = self.model(**encodings, labels=encodings["input_ids"])
+            outputs = self.model(input_ids=input_ids, labels=input_ids)
             loss = outputs.loss
             perplexity = math.exp(loss.item())
 
