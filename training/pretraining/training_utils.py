@@ -107,7 +107,7 @@ class PreTrainer(Trainer):
                     config=self.config,
                 )
                 # Store the run ID for future checkpoints
-                self.wandb_run_id = wandb.run.id
+                self.wandb_run_id = wandb.run.id # type: ignore
             return wandb
         return None
 
