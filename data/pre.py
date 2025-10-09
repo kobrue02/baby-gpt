@@ -42,9 +42,9 @@ def tokenize(dataset):
     return tokenized
     
 
-def create_pretraining_dataset(n_shards=10, dataset_key="EssentialAI/eai-taxonomy-stem-w-dclm"):
+def create_pretraining_dataset(n_shards=10, dataset_key="facebook/recycling_the_web"):
     """
-    Create and process pretraining dataset from EssentialAI by downloading specific parquet shards.
+    Create and process pretraining dataset by downloading specific parquet shards.
 
     Args:
         n_shards: Number of parquet shards to download from the dataset
