@@ -12,8 +12,7 @@ class PeriodicEval:
         self.model = GPT2LMHeadModel.from_pretrained(self.model_id)
         self.model.eval()
     
-    def perplexity(self, input_texts: List[str]) -> float:
-        encodings = self.tokenizer(input_texts, return_tensors="pt")
+    def perplexity(self, encodings) -> float:
 
         # GPT-2 needs both inputs and labels to compute loss
         with torch.no_grad():

@@ -395,7 +395,7 @@ class PreTrainer(Trainer):
 
     def get_mean_perplexity(self):
         generations_batch = self._generate_random_completions(
-            max_new_tokens=50, num_samples=10, temperature=0.8
+            max_new_tokens=50, num_samples=5, temperature=0.8
         )
         mean_pplx = self.evaluator.perplexity(generations_batch)
         return mean_pplx
@@ -461,9 +461,9 @@ class PreTrainer(Trainer):
 
         print("Exiting from training.")
 
-    def _generate_random_completions(self, max_new_tokens=200, num_samples=10, temperature=0.8, top_k=200) -> list[str]:
+    def _generate_random_completions(self, max_new_tokens=200, num_samples=10, temperature=0.8, top_k=200) -> list:
         """ Generate random completions from the model for qualitative evaluation. """
-        prompts = []
+        prompts = ["the", "once upon a time", "the meaning of life is", "the book is", "the capital of france is"]
         completions = []
         contexts = [
             torch.tensor(self.encode(prompt), dtype=torch.long, device=self.device_type)[None, ...]
@@ -477,8 +477,7 @@ class PreTrainer(Trainer):
                         y = self.model.generate(
                             context, max_new_tokens, temperature=temperature, top_k=top_k
                         )
-                        completion: str = self.decode(y[0].tolist())
-                        completions.append(completion)
+                        completions.append(y)
         return completions
 
     def train(self):
