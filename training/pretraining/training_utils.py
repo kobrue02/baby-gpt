@@ -442,7 +442,7 @@ class PreTrainer(Trainer):
             ) // self.config["gradient_accumulation_steps"]
             self.pbar = tqdm(
                 total=batches_per_epoch,
-                position=self.iter_num,
+                initial=self.iter_num % batches_per_epoch,
                 desc=f"epoch {epoch+1}/{self.config['n_epochs']}",
             )
             try:
