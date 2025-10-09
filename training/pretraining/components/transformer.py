@@ -19,6 +19,7 @@ from training.classes.transformer import Transformer
 from training.pretraining.components.blocks import Block, LayerNorm
 from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
 from training.pretraining.components.loss import compute_goldfish_loss
+from training.pretraining.components.yarn import LlamaYaRNScaledRotaryEmbedding
 
 
 import torch
@@ -36,7 +37,10 @@ class GPTWithMHA(Transformer):
         self.config = config
 
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
-        self.wpe = nn.Embedding(config.block_size, config.n_embd)
+        
+        if not config.use_rotary:
+            self.wpe = nn.Embedding(config.block_size, config.n_embd)
+        
         self.transformer = nn.ModuleDict(dict(
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]), # n hidden layers
@@ -90,12 +94,17 @@ class GPTWithMHA(Transformer):
         device = idx.device
         _, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
 
         # forward the GPT model itself
         tok_emb = self.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.wpe(pos) # position embeddings of shape (t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb) # type: ignore
+
+        if not self.config.use_rotary:
+            pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
+            pos_emb = self.wpe(pos) # position embeddings of shape (t, n_embd)
+            x = self.transformer.drop(tok_emb + pos_emb) # type: ignore
+        else:
+            x = self.transformer.drop(tok_emb) # type: ignore
+        
         for block in self.transformer.h: # type: ignore
             x = block(x)
         x = self.transformer.ln_f(x) # type: ignore

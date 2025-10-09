@@ -6,6 +6,8 @@ import math
 from jaxtyping import Float, jaxtyped
 from beartype import beartype as typechecker
 
+from training.pretraining.components.yarn import apply_rotary_pos_emb, LlamaYaRNScaledRotaryEmbedding
+
 
 # Efficient implementation equivalent to the following:
 def scaled_dot_product_attention(
@@ -87,6 +89,8 @@ class MultiHeadAttention(nn.Module):
         bias=True,
         device=None,
         dtype=None,
+        apply_rotary_emb: bool = True,
+        config = None,
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
@@ -98,6 +102,21 @@ class MultiHeadAttention(nn.Module):
         assert E_total % nheads == 0, "Embedding dim is not divisible by nheads"
         self.E_head = E_total // nheads
         self.bias = bias
+
+        self.apply_rotary_emb = apply_rotary_emb
+
+        if self.apply_rotary_emb:
+            assert config is not None, "Config must be provided if using rotary embeddings"
+            self.head_dim = config.n_embd // config.n_head
+            assert self.head_dim == self.E_head, "Head dim must match E_total // nheads"
+            self.block_size = config.block_size
+            self.scale = 1
+            self.rotary_emb = LlamaYaRNScaledRotaryEmbedding(
+                dim=self.head_dim,
+                max_position_embeddings=self.block_size,
+                scale=self.scale,
+                device=device
+            )
 
     @jaxtyped(typechecker=typechecker)
     def forward(
@@ -135,6 +154,12 @@ class MultiHeadAttention(nn.Module):
         query = q.view(B, T, self.nheads, self.E_head).transpose(1, 2)
         key = k.view(B, T, self.nheads, self.E_head).transpose(1, 2)
         value = v.view(B, T, self.nheads, self.E_head).transpose(1, 2)
+
+        # Apply rotary embeddings
+        if self.apply_rotary_emb:
+            assert T <= self.block_size, f"Sequence length {T} exceeds block size {self.block_size}"
+            cos, sin = self.rotary_emb(v, seq_len=T)
+            query, key = apply_rotary_pos_emb(query, key, cos, sin)
 
         # Step 3. Run SDPA
         # (B, nheads, T, E_head)

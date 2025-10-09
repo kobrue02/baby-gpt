@@ -63,6 +63,8 @@ class Block(nn.Module):
             config.n_head,
             dropout=config.attn_pdrop,
             bias=config.bias,
+            apply_rotary_emb=config.use_rotary,
+            config=config,
         )
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)

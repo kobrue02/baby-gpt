@@ -33,6 +33,7 @@ class GPTConfig:
     )
     device: str | None = None  # 'cpu', 'cuda', 'mps', or None for default
     attn_pdrop: float = 0.0  # attention dropout
+    use_rotary: bool = True  # use rotary embeddings
 
 
 def get_device_config():
