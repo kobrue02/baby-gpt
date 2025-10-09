@@ -32,26 +32,30 @@ class PreTrainer(Trainer):
         super().__init__()
         self.resume = resume
         self.data_dir = data_dir
+
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
         self.meta_vocab_size, _, _ = self.derive_vocab_size(self.data_dir)
+        
         # initialize model
         self.model = self.init_model(
             self.meta_vocab_size, self.config.get("compile", True)
         )
-        # Store raw model before compilation for checkpointing
+       
+        # store raw model before compilation for checkpointing
         self.raw_model = (
             self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
         )
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
-        # load checkpoint if resuming
+        
+        # initialize training state, will be overridden if resuming from checkpoint
         self.epoch = 0
         self.iter_num = 0
         self.best_val_loss = 1e9
         self.current_loss = 0.0
         self.observed_tokens_count = 0
         self.wandb_run_id = None
-
-        # Load dataset size for epoch-based training
+        
+        # training data setup
         self.train_data_len = self._get_dataset_length("train")
         self.steps_per_epoch = self.train_data_len // (
             self.config["batch_size"] * self.config["block_size"]
@@ -125,20 +129,15 @@ class PreTrainer(Trainer):
 
     def _create_dataloader_indices(self, data_len: int):
         """Create shuffled indices for epoch-based training."""
-        # Calculate number of sequences we can extract
-        num_sequences = (data_len - self.config["block_size"]) // self.config[
-            "block_size"
-        ]
+        # number of sequences we can extract
+        num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
 
-        # Create sequential starting indices
-        indices = torch.arange(
-            0, num_sequences * self.config["block_size"], self.config["block_size"]
-        )
+        # sequential starting indices
+        indices = torch.arange(0, num_sequences * self.config["block_size"], self.config["block_size"])
 
-        # Shuffle indices for this epoch
-        shuffled_indices = indices[torch.randperm(len(indices))]
+        # shuffle indices for a given epoch
+        return indices[torch.randperm(len(indices))]
 
-        return shuffled_indices
 
     def get_batch(self, split: str, indices: torch.Tensor, batch_idx: int):
         """
@@ -164,12 +163,12 @@ class PreTrainer(Trainer):
                 mode="r",
             )
 
-        # Get batch_size indices from the shuffled index array
+        # get batch_size indices from the shuffled index array
         start_idx = batch_idx * self.config["batch_size"]
         end_idx = min(start_idx + self.config["batch_size"], len(indices))
         batch_indices = indices[start_idx:end_idx]
 
-        # Load sequences at these positions
+        # load sequences at these positions
         x = torch.stack(
             [
                 torch.from_numpy(
@@ -187,8 +186,7 @@ class PreTrainer(Trainer):
             ]
         )
 
-        x, y = x.to(self.device_type), y.to(self.device_type)
-        return x, y
+        return x.to(self.device_type), y.to(self.device_type)
 
     def init_model(self, meta_vocab_size, compile_model=True) -> GPTWithMHA:
         """
@@ -259,14 +257,18 @@ class PreTrainer(Trainer):
         return out
     
     def _perform_gradient_accumulation_steps(self, train_indices, batch_idx):
+        """
+        Perform gradient accumulation over multiple micro-steps.
+        Returns True if at least one backward pass was performed, False otherwise.
+        """
         performed_backward = False
         for micro_step in range(self.config["gradient_accumulation_steps"]):
-            # Get next batch for gradient accumulation
+            # get next batch for gradient accumulation
             current_batch_idx = (
                 batch_idx * self.config["gradient_accumulation_steps"] + micro_step
             )
             if current_batch_idx >= len(train_indices) // self.config["batch_size"]:
-                break  # Don't go past the epoch
+                break  # don't go past the epoch
 
             self.X, self.Y = self.get_batch("train", train_indices, current_batch_idx)
 
@@ -286,6 +288,7 @@ class PreTrainer(Trainer):
             self.scaler.scale(loss).backward()
             performed_backward = True
             self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
+       
         return performed_backward
     
     def _validate_gradients_clipped(self):
@@ -300,31 +303,29 @@ class PreTrainer(Trainer):
         return True
     
     def _step(self):
+        """ Step the optimizer and scaler after gradient accumulation. """
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
 
     def forward_backward(self, train_indices, batch_idx):
+        """ Perform the forward and backward pass, with gradient accumulation if needed. """
         # forward backward update, with gradient accumulation
         performed_backward = self._perform_gradient_accumulation_steps(train_indices, batch_idx)
-        
         # skip optimizer step if no backward passes were performed
         if not performed_backward:
             self.optimizer.zero_grad(set_to_none=True)
             return
-
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
-
-        # Check for NaN gradients after clipping
+        # check for NaN gradients after clipping
         if not self._validate_gradients_clipped():
             return
-        else:
-            # step the optimizer and scaler
+        else: # step the optimizer and scaler
             self._step()
 
     def _validate_checkpoint(self, checkpoint_path):
@@ -336,13 +337,13 @@ class PreTrainer(Trainer):
         return torch.load(checkpoint_path, map_location=self.device_type)
 
     def _load_states(self, checkpoint):
-        # Load model state
+        # load model state
         state_dict = checkpoint["model"]
         for k in list(state_dict.keys()):
             if k.startswith("_orig_mod."):
                 state_dict[k[len("_orig_mod.") :]] = state_dict.pop(k)
 
-        # Load into the raw (uncompiled) model
+        # load into the raw (uncompiled) model
         self.raw_model.load_state_dict(state_dict)
         self.optimizer.load_state_dict(checkpoint["optimizer"])
         self.epoch = checkpoint.get("epoch", 0)
