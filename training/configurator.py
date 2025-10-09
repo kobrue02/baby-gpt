@@ -3,8 +3,19 @@ Configuration settings for training the transformer model.
 """
 
 import torch
+import subprocess as sp
+import os
 
 from dataclasses import dataclass
+
+
+def get_gpu_memory():
+    """Get the available GPU memory in MB."""
+    command = "nvidia-smi --query-gpu=memory.free --format=csv"
+    memory_free_info = sp.check_output(command.split()).decode('ascii').split('\n')[:-1][1:]
+    memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
+    return memory_free_values
+
 
 
 @dataclass
@@ -27,16 +38,47 @@ class GPTConfig:
 def get_device_config():
     """Detect available device and return optimized settings."""
     if torch.cuda.is_available():
+        
+        gpu_mem = get_gpu_memory()
+        n_gpus = len(gpu_mem)
+        print(f"Detected {n_gpus} GPU(s) with memory: {gpu_mem} MB")
+        
+        if n_gpus > 1:
+            raise NotImplementedError("Multi-GPU support is not implemented in this script.")
+        elif n_gpus == 1:
+            gpu_mem = gpu_mem[0]
+            if 9000 <= gpu_mem < 15000:
+                block_size = 1024
+                batch_size = 4
+                grad_accum_steps = 8
+            elif 15000 <= gpu_mem < 17000:
+                block_size = 1024
+                batch_size = 8
+                grad_accum_steps = 8
+            elif 17000 <= gpu_mem < 25000:
+                block_size = 2048
+                batch_size = 8
+                grad_accum_steps = 8
+            elif gpu_mem >= 25000:
+                block_size = 2048
+                batch_size = 16
+                grad_accum_steps = 8
+            else:
+                block_size = 512
+                batch_size = 2
+                grad_accum_steps = 16
+                
         return {
             "device": "cuda",
             "dtype": "float16",
             "compile": False,
-            "gradient_accumulation_steps": 8,
-            "batch_size": 8,
-            "block_size": 1024,
+            "gradient_accumulation_steps": grad_accum_steps,
+            "batch_size": batch_size,
+            "block_size": block_size,
             "wandb_project": "baby-gpt-cuda",
             "wandb_run_name": "baby-gpt-cuda-run",
         }
+    
     elif torch.backends.mps.is_available():
         return {
             "device": "mps",
