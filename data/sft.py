@@ -47,6 +47,18 @@ def create_sft_dataset(n_rows=1000000):
     print(f"Loading {n_rows} rows from general knowledge dataset...")
     split_dataset = load_general_knowledge(n_rows=n_rows)
 
+    # Filter out examples with None or non-string Question/Answer
+    print("Filtering out invalid examples...")
+    def is_valid(example):
+        q = example['Question']
+        a = example['Answer']
+        return (q is not None and a is not None and
+                isinstance(q, str) and isinstance(a, str) and
+                len(q.strip()) > 0 and len(a.strip()) > 0)
+
+    split_dataset = split_dataset.filter(is_valid, desc="Filtering invalid examples")
+    print(f"Kept {len(split_dataset['train'])} train and {len(split_dataset['val'])} val examples")
+
     print("Tokenizing dataset with SFT format (including masks)...")
     tokenized = split_dataset.map(
         process_sft,

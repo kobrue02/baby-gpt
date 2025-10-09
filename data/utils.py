@@ -63,6 +63,7 @@ def process_sft(examples):
     """
     Take examples with 'Question' and 'Answer' fields and encode to ids using tiktoken GPT-2 BPE.
     Works with batched processing to avoid serialization issues.
+    Filters out examples with None or non-string Question/Answer fields.
     """
     # Handle both single example and batch
     if isinstance(examples['Question'], str):
@@ -79,10 +80,18 @@ def process_sft(examples):
     all_lens = []
 
     for q, a in zip(questions, answers):
-        q = clean_text(q)
-        a = clean_text(a)
-        q_ids = enc.encode_ordinary(q + "\n")   # include the separator
-        a_ids = enc.encode_ordinary(a)
+        # Skip examples with None or non-string values
+        if q is None or a is None or not isinstance(q, str) or not isinstance(a, str):
+            continue
+
+        # Skip examples that become empty after cleaning
+        q_clean = clean_text(q)
+        a_clean = clean_text(a)
+        if not q_clean or not a_clean:
+            continue
+
+        q_ids = enc.encode_ordinary(q_clean + "\n")   # include the separator
+        a_ids = enc.encode_ordinary(a_clean)
         ids = q_ids + a_ids
         ids.append(enc.eot_token)
 
@@ -95,7 +104,9 @@ def process_sft(examples):
 
     # Return in the format expected by datasets
     if isinstance(examples['Question'], str):
-        # Single example - return single values
+        # Single example - return single values (or None if filtered out)
+        if len(all_ids) == 0:
+            return None
         return {
             'ids': all_ids[0],
             'mask': all_masks[0],
