@@ -21,6 +21,7 @@ from training.pretraining.components.transformer import GPTWithMHA
 from training.pretraining.components.blocks import GPTConfig
 from training.configurator import load_config
 from training.util import cleanup_mps_memory, get_mps_memory_info
+from training.pretraining.metrics.periodic_evals import PeriodicEval
 
 
 class PreTrainer(Trainer):
@@ -46,6 +47,7 @@ class PreTrainer(Trainer):
             self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
         )
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
+        self.evaluator = PeriodicEval('gpt-2')
         
         # initialize training state, will be overridden if resuming from checkpoint
         self.epoch = 0
@@ -391,14 +393,24 @@ class PreTrainer(Trainer):
 
         self.latest_checkpoint = checkpoint
 
+    def get_mean_perplexity(self):
+        generations_batch = self._generate_random_completions(
+            max_new_tokens=50, num_samples=10, temperature=0.8
+        )
+        mean_pplx = self.evaluator.perplexity(generations_batch)
+        return mean_pplx
+
     def eval_step(self, epoch, iter_num=0):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         losses = self.estimate_loss()
+        mean_pplx = self.get_mean_perplexity()
+        
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
                     "epoch": epoch,
                     "iter": iter_num,
+                    "mean_perplexity": mean_pplx,
                     "train/loss": losses["train"],
                     "val/loss": losses["val"],
                     "lr": self.lr,
@@ -448,6 +460,26 @@ class PreTrainer(Trainer):
             print(get_mps_memory_info())
 
         print("Exiting from training.")
+
+    def _generate_random_completions(self, max_new_tokens=200, num_samples=10, temperature=0.8, top_k=200) -> list[str]:
+        """ Generate random completions from the model for qualitative evaluation. """
+        prompts = []
+        completions = []
+        contexts = [
+            torch.tensor(self.encode(prompt), dtype=torch.long, device=self.device_type)[None, ...]
+            for prompt in prompts[:num_samples]
+            ]
+        for context in contexts:
+            # run generation
+            with torch.no_grad():
+                with self.ctx:
+                    for _ in range(num_samples):
+                        y = self.model.generate(
+                            context, max_new_tokens, temperature=temperature, top_k=top_k
+                        )
+                        completion: str = self.decode(y[0].tolist())
+                        completions.append(completion)
+        return completions
 
     def train(self):
         """

@@ -27,6 +27,8 @@ class Trainer(ABC):
         self.scaler: torch.cuda.amp.GradScaler | torch.amp.GradScaler  # type: ignore
         self.model: Any
         self.raw_model: Any
+        self.encode: Any
+        self.decode: Any
 
     def load_and_validate_config(self):
         """
@@ -92,8 +94,14 @@ class Trainer(ABC):
         if os.path.exists(meta_path):
             with open(meta_path, "rb") as f:
                 meta = pickle.load(f)
+            
             meta_vocab_size = meta["vocab_size"]
             print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
+
+            # TODO want to make this more general to arbitrary encoder/decoder schemes
+            stoi, itos = meta["stoi"], meta["itos"]
+            self.encode = lambda s: [stoi[c] for c in s]
+            self.decode = lambda l: "".join([itos[i] for i in l])
 
         return meta_vocab_size, iter_num, best_val_loss
 
