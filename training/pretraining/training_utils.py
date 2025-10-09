@@ -47,7 +47,7 @@ class PreTrainer(Trainer):
             self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
         )
         self.optimizer, self.scaler = self.init_optimizer_and_scaler()
-        self.evaluator = PeriodicEval('gpt-2')
+        self.evaluator = PeriodicEval('gpt2')
         
         # initialize training state, will be overridden if resuming from checkpoint
         self.epoch = 0
@@ -404,7 +404,7 @@ class PreTrainer(Trainer):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         losses = self.estimate_loss()
         mean_pplx = self.get_mean_perplexity()
-        
+
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
