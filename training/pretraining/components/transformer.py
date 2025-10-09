@@ -38,6 +38,7 @@ class GPTWithMHA(Transformer):
 
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
         
+        self.wpe = nn.Embedding(0, 0) # avoid attribute error if not using rotary embeddings
         if not config.use_rotary:
             self.wpe = nn.Embedding(config.block_size, config.n_embd)
         
@@ -67,7 +68,7 @@ class GPTWithMHA(Transformer):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
+        if non_embedding and not self.config.use_rotary:
             n_params -= self.wpe.weight.numel() # type: ignore
         return n_params
 
@@ -130,7 +131,8 @@ class GPTWithMHA(Transformer):
         # but want to use a smaller block size for some smaller, simpler model
         assert block_size <= self.config.block_size
         self.config.block_size = block_size
-        self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size]) # type: ignore
+        if not self.config.use_rotary:
+            self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size]) # type: ignore
         for block in self.transformer.h: # type: ignore
             if hasattr(block.attn, 'bias'):
                 block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
@@ -147,7 +149,7 @@ class GPTWithMHA(Transformer):
         # acc to muon paper
         hidden_weights = [p for p in self.transformer.parameters() if p.ndim >= 2 and p.requires_grad]
         hidden_gains_biases = [p for p in self.transformer.parameters() if p.ndim < 2 and p.requires_grad]
-        nonhidden_params = [*self.lm_head.parameters(), *self.wpe.parameters()]
+        nonhidden_params = [*self.lm_head.parameters(), *self.wpe.parameters()] if not self.config.use_rotary else [*self.lm_head.parameters()]
         nonhidden_params = [p for p in nonhidden_params if p.requires_grad]
         
         param_groups = [
