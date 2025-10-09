@@ -392,6 +392,7 @@ class PreTrainer(Trainer):
         self.latest_checkpoint = checkpoint
 
     def eval_step(self, epoch, iter_num=0):
+        """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         losses = self.estimate_loss()
         if self.wandb_logger:
             self.wandb_logger.log(
