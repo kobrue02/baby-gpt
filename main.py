@@ -80,7 +80,7 @@ def resume_pretraining():
     This command loads the most recent checkpoint and continues
     pretraining from where it left off.
     """
-    from training.pretraining.training_utils import PreTrainer
+    from training.pretraining.pretrainer import PreTrainer
 
     typer.echo("Resuming pretraining from checkpoint...")
     trainer = PreTrainer(resume=True)
@@ -95,7 +95,7 @@ def start_pretraining():
     This command initializes a new model and begins pretraining
     without loading from a checkpoint.
     """
-    from training.pretraining.training_utils import PreTrainer
+    from training.pretraining.pretrainer import PreTrainer
 
     typer.echo("Starting pretraining from scratch...")
     trainer = PreTrainer(resume=False)
