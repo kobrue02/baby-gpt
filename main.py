@@ -30,12 +30,7 @@ class TrainingMode(str, Enum):
 
 
 @initialize_app.command("pretraining")
-def initialize_pretraining(
-    n_shards: Annotated[int, typer.Option(help="Number of shards to download")] = 10,
-    dataset: Annotated[
-        str, typer.Option(help="Dataset key to use")
-    ] = "facebook/recycling_the_web",
-):
+def initialize_pretraining():
     """
     Initialize pretraining dataset by downloading and processing data.
 
@@ -44,8 +39,12 @@ def initialize_pretraining(
     """
     from data.pre import create_pretraining_dataset
 
-    typer.echo(f"Initializing pretraining with {n_shards} shards from {dataset}...")
-    create_pretraining_dataset(n_shards=n_shards, dataset_key=dataset)
+    dataset = "HuggingFaceTB/smollm-corpus"
+    subset = "cosmopedia-v2"
+    n_items = None
+
+    typer.echo(f"Initializing pretraining {dataset}...")
+    create_pretraining_dataset(n_items=n_items, dataset_key=dataset, subset=subset)
     typer.secho(
         "Pretraining dataset initialized successfully!",
         fg=typer.colors.GREEN,

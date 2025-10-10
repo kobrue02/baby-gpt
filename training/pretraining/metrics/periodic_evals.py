@@ -50,7 +50,7 @@ class PeriodicEval:
     def coherence_rate(self, encodings_batch: List[torch.Tensor], decode_fn: Callable) -> float:
         """% of generations ending with proper punctuation (. ! ?)"""
         valid = sum(1 for enc in encodings_batch 
-                   if re.search(r'[.!?]\s* $', decode_fn(enc.squeeze().cpu().tolist()).strip()))
+                   if re.search(r'[.!?]\s*$', decode_fn(enc.squeeze().cpu().tolist()).strip()))
         return valid / len(encodings_batch)
     
     def token_entropy(self, encodings_batch: List[torch.Tensor]) -> float:
