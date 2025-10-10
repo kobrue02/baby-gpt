@@ -315,40 +315,39 @@ class PreTrainer(Trainer):
         else: # step the optimizer and scaler
             self._step()
 
-    def get_mean_perplexity(self):
+    def get_qualitative_metrics(self) -> tuple:
+        """ Generate random completions and compute the mean perplexity perceived by GPT-2. """
         # list of encodings
         generations_batch = self._generate_random_completions(
             max_new_tokens=50, num_samples=5, temperature=0.8
         )
         mean_pplx = self.evaluator.perplexity(generations_batch)
-        return mean_pplx
+        coherence = self.evaluator.coherence_rate(generations_batch, self.decode)
+        token_entropy = self.evaluator.token_entropy(generations_batch)
+        return mean_pplx, coherence, token_entropy
 
     def eval_step(self, epoch, iter_num=0):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         self.model.eval()
         losses = self.estimate_loss()
-        mean_pplx = self.get_mean_perplexity()
+        mean_pplx, coherence, token_entropy = self.get_qualitative_metrics()
 
         # Update evaluation state
-        self.eval_state.epoch = epoch
-        self.eval_state.iter_num = iter_num
-        self.eval_state.train_loss = losses["train"]
-        self.eval_state.val_loss = losses["val"]
-        self.eval_state.mean_perplexity = mean_pplx
-        self.eval_state.lr = self.lr
-        self.eval_state.current_loss = self.current_loss
+        self.eval_state.update(
+            epoch=epoch,
+            iter_num=iter_num,
+            train_loss=losses["train"],
+            val_loss=losses["val"],
+            mean_perplexity=mean_pplx,
+            coherence_rate=coherence,
+            token_entropy=token_entropy,
+            lr=self.lr,
+            current_loss=self.current_loss
+        )
 
         if self.wandb_logger:
-            self.wandb_logger.log(
-                {
-                    "epoch": epoch,
-                    "iter": iter_num,
-                    "mean_perplexity": mean_pplx,
-                    "train/loss": losses["train"],
-                    "val/loss": losses["val"],
-                    "lr": self.lr,
-                }
-            )
+            self.wandb_logger.log(self.eval_state.log_state())
+        
         if losses["val"] < self.training_state.best_val_loss or self.config["always_save_checkpoint"]:
             self.training_state.best_val_loss = losses["val"]
             self.eval_state.best_val_loss = losses["val"]
@@ -384,8 +383,13 @@ class PreTrainer(Trainer):
             gc.collect()
 
     def _handle_run_time_error(self, e: RuntimeError) -> bool:
-        """ Inspect a RuntimeError and decide whether to continue training or exit. 
-        Returns True if training should continue, False otherwise. """
+        """
+        Inspect a RuntimeError and decide whether to continue training or exit.
+        Args:
+            e: The RuntimeError encountered during training.
+        Returns:
+            bool: True if training should continue, False to exit.
+        """
         continue_training = False
         if "out of memory" in str(e):
             self.pbar.set_postfix_str("WARNING: ran out of memory, skipping batch")

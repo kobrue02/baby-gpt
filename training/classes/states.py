@@ -95,6 +95,26 @@ class EvaluationState:
     current_loss: float
     iter_num: int
     mean_perplexity: float
+    coherence_rate: float
+    token_entropy: float
     train_loss: float
     val_loss: float
     lr: float
+
+    def update(self, **kwargs):
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+    def log_state(self):
+        return {
+            "epoch": self.epoch,
+            "iter_num": self.iter_num,
+            "train/loss": self.train_loss,
+            "val/loss": self.val_loss,
+            "mean_gpt2_perplexity": self.mean_perplexity,
+            "coherence_rate": self.coherence_rate,
+            "token_entropy": self.token_entropy,
+            "learning_rate": self.lr,
+            "current_loss": self.current_loss,
+        }

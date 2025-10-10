@@ -1,7 +1,10 @@
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
-from typing import List, Any
+from typing import List, Dict, Callable
 import torch
 import math
+import re
+from collections import Counter
+import numpy as np
 
 
 class PeriodicEval:
@@ -44,3 +47,18 @@ class PeriodicEval:
 
         return sum(perplexities) / len(perplexities)
 
+    def coherence_rate(self, encodings_batch: List[torch.Tensor], decode_fn: Callable) -> float:
+        """% of generations ending with proper punctuation (. ! ?)"""
+        valid = sum(1 for enc in encodings_batch 
+                   if re.search(r'[.!?]\s* $', decode_fn(enc.squeeze().cpu().tolist()).strip()))
+        return valid / len(encodings_batch)
+    
+    def token_entropy(self, encodings_batch: List[torch.Tensor]) -> float:
+        """Mean Shannon entropy across sequences"""
+        entropies = []
+        for enc in encodings_batch:
+            tokens = enc.squeeze().cpu().tolist()
+            counts = Counter(tokens)
+            probs = [c / len(tokens) for c in counts.values()]
+            entropies.append(-sum(p * math.log(p) for p in probs if p > 0))
+        return np.mean(entropies).astype(float)

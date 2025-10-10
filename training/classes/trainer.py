@@ -313,6 +313,8 @@ class Trainer(ABC):
             current_loss=0.0,
             iter_num=0,
             mean_perplexity=float("inf"),
+            coherence_rate=0.0,
+            token_entropy=0.0,
             train_loss=0.0,
             val_loss=0.0,
             lr=0.0,
