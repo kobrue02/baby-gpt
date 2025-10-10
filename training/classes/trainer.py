@@ -226,13 +226,15 @@ class Trainer(ABC):
         for param_group in self.training_state.optimizer.param_groups:
             param_group["lr"] = self.training_state.lr
 
-    def init_optimizer_and_scaler(self):
+    def init_optimizer_and_scaler(self, model=None):
         """Initialize the optimizer and gradient scaler."""
         if torch.__version__ <= "2.4":
             scaler = torch.cuda.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
         else:
             scaler = torch.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
-        optimizer = self.model.configure_optimizers(
+        # Use provided model or fall back to self.model property
+        model_to_use = model if model is not None else self.model
+        optimizer = model_to_use.configure_optimizers(
             self.config["weight_decay"],
             self.config["learning_rate"],
             (self.config["beta1"], self.config["beta2"]),

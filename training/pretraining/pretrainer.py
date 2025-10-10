@@ -89,8 +89,8 @@ class PreTrainer(Trainer):
         raw_model: torch.nn.Module = (
             model._orig_mod if hasattr(model, "_orig_mod") else model  # type: ignore
         )
-        # initialize optimizer and scaler
-        optimizer, scaler = self.init_optimizer_and_scaler()
+        # initialize optimizer and scaler, passing model explicitly
+        optimizer, scaler = self.init_optimizer_and_scaler(model=model)
         lr = self.config["learning_rate"]
         return TrainingState(
             model=model,
