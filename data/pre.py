@@ -6,7 +6,7 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 # https://github.com/HazyResearch/flash-attention/blob/main/training/src/datamodules/language_modeling_hf.py
 
 import sys
-from datasets import load_dataset, DatasetDict, Dataset
+from datasets import load_dataset, DatasetDict, Dataset, IterableDataset, IterableDatasetDict
 from data.utils import process, to_bins
 from tqdm import tqdm
 
@@ -15,22 +15,26 @@ def get_dataset_splits(dataset_key, subset=None, n_items=None, test_size=0.001, 
     print(f"Loading first {n_items} shards from {dataset_key} dataset...")
     # Load dataset in streaming mode to get first n_shards worth of data
     # Stream the dataset and take only what we need
+    ds: Dataset | DatasetDict | IterableDataset | IterableDatasetDict
     if not subset:
-        ds = load_dataset(dataset_key, split="train", streaming=True)
+        if n_items:
+            ds = load_dataset(dataset_key, split="train", streaming=True)
+            ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
+            ds = Dataset.from_list(ds_list)
+        else:
+            ds = load_dataset(dataset_key, split="train")
     else:
-        ds = load_dataset(dataset_key, subset, split="train", streaming=True)
-    # Calculate approximate number of examples to take based on shard count
-    # Each shard has roughly similar number of examples
-    # We'll take the first portion of the dataset
-    if n_items:
-        ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
-    else:
-        ds_list = list(tqdm(ds, desc="Loading examples"))
-    ds = Dataset.from_list(ds_list)
+        if n_items:
+            ds = load_dataset(dataset_key, subset, split="train", streaming=True)
+            ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
+            ds = Dataset.from_list(ds_list)
+        else:
+            ds = load_dataset(dataset_key, subset, split="train")
+
     # Remove all columns except 'text'
-    ds = ds.remove_columns([col for col in ds.column_names if col != "text"])
+    ds = ds.remove_columns([col for col in ds.column_names if col != "text"]) # type: ignore
     # Create train/val split
-    splits = ds.train_test_split(test_size=0.001, seed=42)
+    splits = ds.train_test_split(test_size=0.001, seed=42) # type: ignore
     split_dataset = DatasetDict({"train": splits["train"], "val": splits["test"]})
     return split_dataset
 
