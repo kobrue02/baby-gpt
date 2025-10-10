@@ -9,7 +9,10 @@ class TrainingState:
     model: Transformer
     raw_model: torch.nn.Module
     optimizer: torch.optim.Optimizer
-    scaler: Optional[torch.cuda.amp.GradScaler | torch.amp.GradScaler] # type: ignore
+    try:
+        scaler: Optional[torch.cuda.amp.GradScaler | torch.amp.GradScaler] # type: ignore
+    except AttributeError:
+        scaler: Optional[torch.cuda.amp.GradScaler] # old PyTorch version
     epoch: int
     iter_num: int
     lr: float
