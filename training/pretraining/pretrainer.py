@@ -40,6 +40,7 @@ class PreTrainer(Trainer):
         self.meta_vocab_size, self.encode, self.decode = self.derive_vocab_size(self.data_dir)
 
         # init training state, will be overwritten if resuming from checkpoint
+        self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
         self.training_state = self.init_training_state()
         self.eval_state = self.init_eval_state()
 
@@ -48,7 +49,6 @@ class PreTrainer(Trainer):
         self.steps_per_epoch = self.train_data_len // (
             self.config["batch_size"] * self.config["block_size"]
         )
-        self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
 
         if self.resume:  # load existing checkpoint
             self.load_checkpoint()
