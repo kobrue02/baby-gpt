@@ -1,5 +1,5 @@
 from training.classes.transformer import Transformer
-from typing import Optional
+from typing import Optional, Any
 from dataclasses import dataclass
 
 import torch
@@ -13,7 +13,10 @@ class TrainingState:
         scaler: Optional[torch.cuda.amp.GradScaler | torch.amp.GradScaler] # type: ignore
     except AttributeError:
         scaler: Optional[torch.cuda.amp.GradScaler] # old PyTorch version
-    scheduler: Optional[torch.optim.lr_scheduler.LRScheduler]
+    try:
+        scheduler: Optional[torch.optim.lr_scheduler.LRScheduler] # type: ignore
+    except AttributeError:
+        scheduler: Optional[Any] # old PyTorch version
     epoch: int
     iter_num: int
     lr: float
