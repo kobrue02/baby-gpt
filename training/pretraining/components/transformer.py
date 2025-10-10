@@ -188,7 +188,7 @@ class GPTWithMHA(Transformer):
         ]
 
         print(
-            f"training {int(len(hidden_weights)+len(hidden_gains_biases)+len(nonhidden_params))} trainable parameters"
+            f"training {sum(p.numel() for p in hidden_weights + hidden_gains_biases + nonhidden_params)} trainable parameters"
         )
         # Create AdamW optimizer and use the fused version if it is available
         # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
