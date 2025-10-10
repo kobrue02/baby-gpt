@@ -21,6 +21,7 @@ class TrainingState:
     config: dict
     wandb_run_id: Optional[str]
     observed_tokens_count: int
+    predicted_tokens_count: int
     current_loss: float = 0.0
 
     @classmethod
@@ -43,10 +44,12 @@ class TrainingState:
         iter_num = checkpoint.get("iter_num", 0)
         best_val_loss = checkpoint["best_val_loss"]
         observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
+        predicted_tokens_count = checkpoint.get("predicted_tokens_count", 0)
         wandb_run_id = checkpoint.get("wandb_run_id", None)
         config = checkpoint.get("config", {})
         lr = config.get("learning_rate", 0.0)
         current_loss = checkpoint.get("current_loss", 0.0)
+
 
         return cls(
             model=model,
@@ -61,6 +64,7 @@ class TrainingState:
             config=config,
             wandb_run_id=wandb_run_id,
             observed_tokens_count=observed_tokens_count,
+            predicted_tokens_count=predicted_tokens_count,
             current_loss=current_loss,
         )
 
@@ -75,6 +79,7 @@ class TrainingState:
             "config": self.config,
             "wandb_run_id": self.wandb_run_id,
             "observed_tokens_count": self.observed_tokens_count,
+            "predicted_tokens_count": self.predicted_tokens_count,
             "current_loss": self.current_loss,
         }
         # Save scheduler state if available

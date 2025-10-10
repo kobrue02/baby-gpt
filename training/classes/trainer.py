@@ -88,6 +88,14 @@ class Trainer(ABC):
         self.training_state.observed_tokens_count = value
 
     @property
+    def predicted_tokens_count(self):
+        return self.training_state.predicted_tokens_count
+
+    @predicted_tokens_count.setter
+    def predicted_tokens_count(self, value):
+        self.training_state.predicted_tokens_count = value
+
+    @property
     def current_loss(self):
         return self.training_state.current_loss
 
@@ -353,6 +361,9 @@ class Trainer(ABC):
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad(set_to_none=True)
+        # step the scheduler if using PyTorch scheduler
+        if self.training_state.scheduler is not None:
+            self.training_state.scheduler.step()
 
     def _validate_checkpoint(self, checkpoint_path):
         """Validate and load a checkpoint file."""

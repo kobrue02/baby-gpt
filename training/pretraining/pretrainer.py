@@ -5,12 +5,13 @@ To run on a single GPU, example:
 $ python -m training.pretraining
 """
 
+import gc
 import os
 import numpy as np
 import torch
+import time
 import warnings
 
-# Suppress Pydantic warnings about Field attributes
 warnings.filterwarnings(
     "ignore", category=UserWarning, module="pydantic._internal._generate_schema"
 )
@@ -109,6 +110,7 @@ class PreTrainer(Trainer):
             config=self.config,
             wandb_run_id=None,  # Will be set by setup_logging if needed
             observed_tokens_count=0,
+            predicted_tokens_count=0,
         )
 
     def _get_dataset_length(self, split: str):
@@ -240,39 +242,55 @@ class PreTrainer(Trainer):
             out[split] = losses.mean()
         return out
     
-    def _perform_gradient_accumulation_steps(self, train_indices, batch_idx):
+    def _perform_gradient_accumulation_steps(self, train_indices, base_batch_idx):
         """
         Perform gradient accumulation over multiple micro-steps.
-        Returns True if at least one backward pass was performed, False otherwise.
+
+        Args:
+            train_indices: Shuffled indices for the current epoch
+            base_batch_idx: The base batch index (will process gradient_accumulation_steps batches starting from this)
+
+        Returns:
+            True if at least one backward pass was performed, False otherwise.
         """
         performed_backward = False
-        for micro_step in range(self.config["gradient_accumulation_steps"]):
-            # get next batch for gradient accumulation
-            current_batch_idx = (
-                batch_idx * self.config["gradient_accumulation_steps"] + micro_step
-            )
-            if current_batch_idx >= len(train_indices) // self.config["batch_size"]:
-                break  # don't go past the epoch
+        accumulated_loss = 0.0
+        successful_steps = 0
 
-            self.X, self.Y = self.get_batch("train", train_indices, current_batch_idx)
+        num_accumulation_steps = self.config["gradient_accumulation_steps"]
+        max_batches_available = len(train_indices) // self.config["batch_size"]
+
+        for micro_step in range(num_accumulation_steps):
+            # each base_batch_idx covers num_accumulation_steps micro-batches
+            actual_batch_idx = base_batch_idx * num_accumulation_steps + micro_step
+            if actual_batch_idx >= max_batches_available:
+                break # stop if we've exhausted the dataset
+
+            self.X, self.Y = self.get_batch("train", train_indices, actual_batch_idx)
 
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
-                loss = loss / self.config["gradient_accumulation_steps"]
-                self.observed_tokens_count += torch.numel(self.X)
+                # scale loss (to account for accumulation)
+                loss = loss / num_accumulation_steps
+                # track token counts for stats
+                self.training_state.observed_tokens_count += torch.numel(self.X)
+                self.training_state.predicted_tokens_count += torch.numel(self.Y)
 
-            # check for NaN/inf loss before backward pass
             if not torch.isfinite(loss):
-                self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
                 self.pbar.set_postfix_str(
-                    "skipping this batch to prevent gradient corruption"
+                    f"non-finite loss: {loss.item()}, skipping batch {actual_batch_idx}"
                 )
                 continue
 
             assert self.scaler is not None, "Scaler should be initialized"
             self.scaler.scale(loss).backward()
             performed_backward = True
-            self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
+            accumulated_loss += loss.item()
+            successful_steps += 1
+
+        # undo the scaling and get the average loss over successful steps
+        if successful_steps > 0:
+            self.current_loss = accumulated_loss * num_accumulation_steps / successful_steps
 
         return performed_backward
 
@@ -359,29 +377,35 @@ class PreTrainer(Trainer):
         # else, perform the forward/backward pass and clear memory
         self.forward_backward(train_indices, batch_idx)
 
-        # step the scheduler if using PyTorch scheduler
-        if self.training_state.scheduler is not None:
-            self.training_state.scheduler.step()
-
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
+            gc.collect()
 
-    def _runtime_error_exit(self, e: RuntimeError):
-        """Handle RuntimeError during training by saving checkpoint and exiting gracefully."""
-        self.pbar.close()
-
-        print(f"Error during training step: {e}")
-        print(str(e))
-        print("Memory usage summary:")
-
-        if self.device_type == "cuda":
-            print(torch.cuda.memory_summary())
-        elif self.device_type == "mps":
-            print(get_mps_memory_info())
-
-        print("Exiting from training.")
+    def _handle_run_time_error(self, e: RuntimeError) -> bool:
+        """ Inspect a RuntimeError and decide whether to continue training or exit. 
+        Returns True if training should continue, False otherwise. """
+        continue_training = False
+        if "out of memory" in str(e):
+            self.pbar.set_postfix_str("WARNING: ran out of memory, skipping batch")
+            time.sleep(1)  # give the GPU a second to recover
+            if self.device_type == "cuda":
+                torch.cuda.empty_cache()
+                gc.collect()
+            elif self.device_type == "mps":
+                cleanup_mps_memory()
+            continue_training = True
+        else: # it is a serious error, exit training
+            self.pbar.close()
+            print(f"Error during training step: {e}")
+            print(str(e))
+            print("Memory usage summary:")
+            if self.device_type == "cuda":
+                print(torch.cuda.memory_summary())
+            elif self.device_type == "mps":
+                print(get_mps_memory_info())
+        return continue_training
 
     def _generate_random_completions(self, max_new_tokens=200, num_samples=10, temperature=0.8, top_k=200) -> list:
         """ Generate random completions from the model for qualitative evaluation. """
@@ -391,15 +415,15 @@ class PreTrainer(Trainer):
             torch.tensor(self.encode(prompt), dtype=torch.long, device=self.device_type)[None, ...]
             for prompt in prompts[:num_samples]
             ]
-        for context in contexts:
-            # run generation
-            with torch.no_grad():
-                with self.ctx:
-                    for _ in range(num_samples):
-                        y = self.training_state.model.generate(
-                            context, max_new_tokens, temperature=temperature, top_k=top_k
-                        )
-                        completions.append(y)
+        assert len(contexts) > 0 and len(contexts) <= num_samples, "invalid number of contexts generated"
+        # run generation
+        with torch.no_grad():
+            with self.ctx:
+                for context in contexts:
+                    completion = self.training_state.model.generate(
+                        context, max_new_tokens, temperature=temperature, top_k=top_k
+                    )
+                    completions.append(completion)
         return completions
 
     def train(self):
@@ -438,8 +462,10 @@ class PreTrainer(Trainer):
                 break
 
             except RuntimeError as e:
-                self._runtime_error_exit(e)
-                break
+                continue_training = self._handle_run_time_error(e)
+                if not continue_training:
+                    print("Exiting from training due to error.")
+                    break
 
         self.pbar.close()
         print(f"exiting training - epoch {epoch}, iter {self.iter_num}")
