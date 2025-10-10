@@ -30,9 +30,10 @@ grad_clip: 1.0
 
 # Learning rate schedule
 decay_lr: true
+use_pytorch_scheduler: true  # Use PyTorch's built-in scheduler for better stability
 warmup_iters: 500
 lr_decay_iters: 5000
-min_lr: 0.1
+min_lr: 0.00003  # 10% of peak learning rate
 
 # Process settings (static defaults)
 master_process: true

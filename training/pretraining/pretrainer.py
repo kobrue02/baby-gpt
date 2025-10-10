@@ -5,18 +5,20 @@ To run on a single GPU, example:
 $ python -m training.pretraining
 """
 
+import gc
 import os
 import numpy as np
 import torch
+import time
 import warnings
 
-# Suppress Pydantic warnings about Field attributes
 warnings.filterwarnings(
     "ignore", category=UserWarning, module="pydantic._internal._generate_schema"
 )
 
 from tqdm import tqdm
 from training.classes.trainer import Trainer
+from training.classes.states import TrainingState
 from training.pretraining.components.transformer import GPTWithMHA
 from training.pretraining.components.blocks import GPTConfig
 from training.configurator import load_config
@@ -36,39 +38,24 @@ class PreTrainer(Trainer):
 
         self.device_type, self.ptdtype, self.ctx = self.setup_device()
         self.meta_vocab_size, self.encode, self.decode = self.derive_vocab_size(self.data_dir)
-        
-        # initialize model
-        self.model = self.init_model(
-            self.meta_vocab_size, self.config.get("compile", True)
-        )
-       
-        # store raw model before compilation for checkpointing
-        self.raw_model = (
-            self.model._orig_mod if hasattr(self.model, "_orig_mod") else self.model
-        )
-        self.optimizer, self.scaler = self.init_optimizer_and_scaler()
-        self.evaluator = PeriodicEval('gpt2')
-        
-        # initialize training state, will be overridden if resuming from checkpoint
-        self.epoch = 0
-        self.iter_num = 0
-        self.best_val_loss = 1e9
-        self.current_loss = 0.0
-        self.observed_tokens_count = 0
-        self.wandb_run_id = None
-        
+
         # training data setup
         self.train_data_len = self._get_dataset_length("train")
         self.steps_per_epoch = self.train_data_len // (
             self.config["batch_size"] * self.config["block_size"]
         )
         self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
+        
+        # init training state, will be overwritten if resuming from checkpoint
+        self.training_state = self.init_training_state()
+        self.eval_state = self.init_eval_state()
 
         if self.resume:  # load existing checkpoint
             self.load_checkpoint()
 
-        # initialize logger
+        # initialize logger and evaluator
         self.wandb_logger = self.setup_logging()
+        self.evaluator = PeriodicEval('gpt2')
 
     def load_and_validate_config(self):
         """
@@ -89,29 +76,42 @@ class PreTrainer(Trainer):
         print(f"tokens per iteration will be: {config['tokens_per_iter']:,}")
         self.config = config
 
-    def setup_logging(self):
-        """Setup logging with Weights & Biases if enabled in the config."""
-        if self.config["wandb_log"] and self.config["master_process"]:
-            import wandb
+    def init_training_state(self):
+        """
+        Initialize the training state.
+        Returns:
+            TrainingState: The initialized training state.
+        """
+        # initialize model
+        model = self.init_model(
+            self.meta_vocab_size, self.config.get("compile", True)
+        )
+        # store raw model before compilation for checkpointing
+        raw_model: torch.nn.Module = (
+            model._orig_mod if hasattr(model, "_orig_mod") else model  # type: ignore
+        )
+        # initialize optimizer and scaler, passing model explicitly
+        optimizer, scaler = self.init_optimizer_and_scaler(model=model)
 
-            # Resume existing run if we have a run ID, otherwise start new run
-            if self.wandb_run_id:
-                wandb.init(
-                    project=self.config["wandb_project"],
-                    id=self.wandb_run_id,
-                    resume="must",
-                    config=self.config,
-                )
-            else:
-                wandb.init(
-                    project=self.config["wandb_project"],
-                    name=self.config["wandb_run_name"],
-                    config=self.config,
-                )
-                # Store the run ID for future checkpoints
-                self.wandb_run_id = wandb.run.id # type: ignore
-            return wandb
-        return None
+        # initialize scheduler with total steps
+        scheduler = self.init_scheduler(optimizer, self.total_steps)
+
+        lr = self.config["learning_rate"]
+        return TrainingState(
+            model=model,
+            raw_model=raw_model,
+            optimizer=optimizer,
+            scaler=scaler,
+            scheduler=scheduler,
+            epoch=0,
+            lr=lr,
+            iter_num=0,
+            best_val_loss=float("inf"),
+            config=self.config,
+            wandb_run_id=None,  # Will be set by setup_logging if needed
+            observed_tokens_count=0,
+            predicted_tokens_count=0,
+        )
 
     def _get_dataset_length(self, split: str):
         """Get the length of the dataset in tokens."""
@@ -223,20 +223,6 @@ class PreTrainer(Trainer):
 
         return model.to(self.device_type)
 
-    def init_optimizer_and_scaler(self):
-        """Initialize the optimizer and gradient scaler."""
-        if torch.__version__ <= "2.4":
-            scaler = torch.cuda.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
-        else:
-            scaler = torch.amp.GradScaler(enabled=(self.config["dtype"] == "float16"))  # type: ignore
-        optimizer = self.model.configure_optimizers(
-            self.config["weight_decay"],
-            self.config["learning_rate"],
-            (self.config["beta1"], self.config["beta2"]),
-            self.device_type,
-        )
-        return optimizer, scaler
-
     # helps estimate an arbitrarily accurate loss over either split using many batches
     @torch.no_grad()
     def estimate_loss(self):
@@ -256,57 +242,57 @@ class PreTrainer(Trainer):
             out[split] = losses.mean()
         return out
     
-    def _perform_gradient_accumulation_steps(self, train_indices, batch_idx):
+    def _perform_gradient_accumulation_steps(self, train_indices, base_batch_idx):
         """
         Perform gradient accumulation over multiple micro-steps.
-        Returns True if at least one backward pass was performed, False otherwise.
+
+        Args:
+            train_indices: Shuffled indices for the current epoch
+            base_batch_idx: The base batch index (will process gradient_accumulation_steps batches starting from this)
+
+        Returns:
+            True if at least one backward pass was performed, False otherwise.
         """
         performed_backward = False
-        for micro_step in range(self.config["gradient_accumulation_steps"]):
-            # get next batch for gradient accumulation
-            current_batch_idx = (
-                batch_idx * self.config["gradient_accumulation_steps"] + micro_step
-            )
-            if current_batch_idx >= len(train_indices) // self.config["batch_size"]:
-                break  # don't go past the epoch
+        accumulated_loss = 0.0
+        successful_steps = 0
 
-            self.X, self.Y = self.get_batch("train", train_indices, current_batch_idx)
+        num_accumulation_steps = self.config["gradient_accumulation_steps"]
+        max_batches_available = len(train_indices) // self.config["batch_size"]
+
+        for micro_step in range(num_accumulation_steps):
+            # each base_batch_idx covers num_accumulation_steps micro-batches
+            actual_batch_idx = base_batch_idx * num_accumulation_steps + micro_step
+            if actual_batch_idx >= max_batches_available:
+                break # stop if we've exhausted the dataset
+
+            self.X, self.Y = self.get_batch("train", train_indices, actual_batch_idx)
 
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
-                loss = loss / self.config["gradient_accumulation_steps"]
-                self.observed_tokens_count += torch.numel(self.X)
+                # scale loss (to account for accumulation)
+                loss = loss / num_accumulation_steps
+                # track token counts for stats
+                self.training_state.observed_tokens_count += torch.numel(self.X)
+                self.training_state.predicted_tokens_count += torch.numel(self.Y)
 
-            # check for NaN/inf loss before backward pass
             if not torch.isfinite(loss):
-                self.pbar.set_postfix_str(f"non-finite loss detected: {loss.item()}")
                 self.pbar.set_postfix_str(
-                    "skipping this batch to prevent gradient corruption"
+                    f"non-finite loss: {loss.item()}, skipping batch {actual_batch_idx}"
                 )
                 continue
 
+            assert self.scaler is not None, "Scaler should be initialized"
             self.scaler.scale(loss).backward()
             performed_backward = True
-            self.current_loss = loss.item() * self.config["gradient_accumulation_steps"]
-       
+            accumulated_loss += loss.item()
+            successful_steps += 1
+
+        # undo the scaling and get the average loss over successful steps
+        if successful_steps > 0:
+            self.current_loss = accumulated_loss * num_accumulation_steps / successful_steps
+
         return performed_backward
-    
-    def _validate_gradients_clipped(self):
-        for name, param in self.model.named_parameters():
-            if param.grad is not None and not torch.isfinite(param.grad).all():
-                self.pbar.set_postfix_str(f"corrupted gradient detected in {name}")
-                self.pbar.set_postfix_str(
-                    "Skipping optimizer step due to NaN gradients"
-                )
-                self.optimizer.zero_grad(set_to_none=True)
-                return False
-        return True
-    
-    def _step(self):
-        """ Step the optimizer and scaler after gradient accumulation. """
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        self.optimizer.zero_grad(set_to_none=True)
 
     def forward_backward(self, train_indices, batch_idx):
         """ Perform the forward and backward pass, with gradient accumulation if needed. """
@@ -318,6 +304,7 @@ class PreTrainer(Trainer):
             return
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
+            assert self.scaler is not None, "Scaler should be initialized"
             self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
@@ -328,99 +315,46 @@ class PreTrainer(Trainer):
         else: # step the optimizer and scaler
             self._step()
 
-    def _validate_checkpoint(self, checkpoint_path):
-        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
-        if not os.path.exists(checkpoint_path):
-            print(f"No checkpoint found at {checkpoint_path}, starting from scratch")
-            return
-        print(f"Resuming training from {checkpoint_path}")
-        return torch.load(checkpoint_path, map_location=self.device_type)
-
-    def _load_states(self, checkpoint):
-        # load model state
-        state_dict = checkpoint["model"]
-        for k in list(state_dict.keys()):
-            if k.startswith("_orig_mod."):
-                state_dict[k[len("_orig_mod.") :]] = state_dict.pop(k)
-
-        # load into the raw (uncompiled) model
-        self.raw_model.load_state_dict(state_dict)
-        self.optimizer.load_state_dict(checkpoint["optimizer"])
-        self.epoch = checkpoint.get("epoch", 0)
-        self.iter_num = checkpoint.get("iter_num", 0)
-        self.best_val_loss = checkpoint["best_val_loss"]
-        self.observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
-        self.wandb_run_id = checkpoint.get("wandb_run_id", None)
-
-        wandb_msg = f" (wandb run ID: {self.wandb_run_id})" if self.wandb_run_id else ""
-        print(
-            f"Resumed from epoch {self.epoch}, iteration {self.iter_num} with best val loss {self.best_val_loss:.4f}{wandb_msg}"
-        )
-
-    def load_checkpoint(self):
-        """Load the latest checkpoint from the output directory."""
-        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
-        checkpoint = self._validate_checkpoint(checkpoint_path)
-        if checkpoint is None:
-            return  # No checkpoint to load
-        else:
-            self._load_states(checkpoint)
-
-    def _atomic_save_checkpoint(self, checkpoint):
-        """ Atomically save the checkpoint to prevent corruption on interruption. """
-        checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
-        temp_path = checkpoint_path + ".tmp"
-        torch.save(checkpoint, temp_path)
-        os.replace(temp_path, checkpoint_path)
-
-    def save_checkpoint(self, epoch, iter_num):
-        checkpoint = {
-            "model": self.raw_model.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-            "epoch": epoch,
-            "iter_num": iter_num,
-            "best_val_loss": self.best_val_loss,
-            "observed_tokens_count": self.observed_tokens_count,
-            "wandb_run_id": self.wandb_run_id,
-            "config": self.config,
-        }
-        self.pbar.set_postfix_str(f"saving checkpoint to {self.config['out_dir']}")
-
-        # Use atomic write to prevent corruption on interruption
-        self._atomic_save_checkpoint(checkpoint)
-
-        self.latest_checkpoint = checkpoint
-
-    def get_mean_perplexity(self):
+    def get_qualitative_metrics(self) -> tuple:
+        """ Generate random completions and compute the mean perplexity perceived by GPT-2. """
         # list of encodings
         generations_batch = self._generate_random_completions(
             max_new_tokens=50, num_samples=5, temperature=0.8
         )
         mean_pplx = self.evaluator.perplexity(generations_batch)
-        return mean_pplx
+        coherence = self.evaluator.coherence_rate(generations_batch, self.decode)
+        token_entropy = self.evaluator.token_entropy(generations_batch)
+        return mean_pplx, coherence, token_entropy
 
     def eval_step(self, epoch, iter_num=0):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         self.model.eval()
         losses = self.estimate_loss()
-        mean_pplx = self.get_mean_perplexity()
-        if self.wandb_logger:
-            self.wandb_logger.log(
-                {
-                    "epoch": epoch,
-                    "iter": iter_num,
-                    "mean_perplexity": mean_pplx,
-                    "train/loss": losses["train"],
-                    "val/loss": losses["val"],
-                    "lr": self.lr,
-                }
-            )
-        if losses["val"] < self.best_val_loss or self.config["always_save_checkpoint"]:
-            self.best_val_loss = losses["val"]
-            if iter_num > 0:
-                self.save_checkpoint(epoch, iter_num)
+        mean_pplx, coherence, token_entropy = self.get_qualitative_metrics()
 
-        self.model.train()
+        # Update evaluation state
+        self.eval_state.update(
+            epoch=epoch,
+            iter_num=iter_num,
+            train_loss=losses["train"],
+            val_loss=losses["val"],
+            mean_perplexity=mean_pplx,
+            coherence_rate=coherence,
+            token_entropy=token_entropy,
+            lr=self.lr,
+            current_loss=self.current_loss
+        )
+
+        if self.wandb_logger:
+            self.wandb_logger.log(self.eval_state.log_state())
+        
+        if losses["val"] < self.training_state.best_val_loss or self.config["always_save_checkpoint"]:
+            self.training_state.best_val_loss = losses["val"]
+            self.eval_state.best_val_loss = losses["val"]
+            if iter_num > 0:
+                self.save_checkpoint()
+
+        self.training_state.model.train()
 
     def training_step(self, epoch, iter_num, train_indices, batch_idx):
         """Perform a single training step."""
@@ -441,26 +375,41 @@ class PreTrainer(Trainer):
 
         # else, perform the forward/backward pass and clear memory
         self.forward_backward(train_indices, batch_idx)
-        
+
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
             torch.cuda.empty_cache()
+            gc.collect()
 
-    def _runtime_error_exit(self, e: RuntimeError):
-        """Handle RuntimeError during training by saving checkpoint and exiting gracefully."""
-        self.pbar.close()
-
-        print(f"Error during training step: {e}")
-        print(str(e))
-        print("Memory usage summary:")
-
-        if self.device_type == "cuda":
-            print(torch.cuda.memory_summary())
-        elif self.device_type == "mps":
-            print(get_mps_memory_info())
-
-        print("Exiting from training.")
+    def _handle_run_time_error(self, e: RuntimeError) -> bool:
+        """
+        Inspect a RuntimeError and decide whether to continue training or exit.
+        Args:
+            e: The RuntimeError encountered during training.
+        Returns:
+            bool: True if training should continue, False to exit.
+        """
+        continue_training = False
+        if "out of memory" in str(e):
+            self.pbar.set_postfix_str("WARNING: ran out of memory, skipping batch")
+            time.sleep(1)  # give the GPU a second to recover
+            if self.device_type == "cuda":
+                torch.cuda.empty_cache()
+                gc.collect()
+            elif self.device_type == "mps":
+                cleanup_mps_memory()
+            continue_training = True
+        else: # it is a serious error, exit training
+            self.pbar.close()
+            print(f"Error during training step: {e}")
+            print(str(e))
+            print("Memory usage summary:")
+            if self.device_type == "cuda":
+                print(torch.cuda.memory_summary())
+            elif self.device_type == "mps":
+                print(get_mps_memory_info())
+        return continue_training
 
     def _generate_random_completions(self, max_new_tokens=200, num_samples=10, temperature=0.8, top_k=200) -> list:
         """ Generate random completions from the model for qualitative evaluation. """
@@ -470,22 +419,22 @@ class PreTrainer(Trainer):
             torch.tensor(self.encode(prompt), dtype=torch.long, device=self.device_type)[None, ...]
             for prompt in prompts[:num_samples]
             ]
-        for context in contexts:
-            # run generation
-            with torch.no_grad():
-                with self.ctx:
-                    for _ in range(num_samples):
-                        y = self.model.generate(
-                            context, max_new_tokens, temperature=temperature, top_k=top_k
-                        )
-                        completions.append(y)
+        assert len(contexts) > 0 and len(contexts) <= num_samples, "invalid number of contexts generated"
+        # run generation
+        with torch.no_grad():
+            with self.ctx:
+                for context in contexts:
+                    completion = self.training_state.model.generate(
+                        context, max_new_tokens, temperature=temperature, top_k=top_k
+                    )
+                    completions.append(completion)
         return completions
 
     def train(self):
         """
         Train the model using epoch-based training.
         """
-        for epoch in range(self.epoch, self.config["n_epochs"]):
+        for epoch in range(self.training_state.epoch, self.config["n_epochs"]):
             train_indices = self._create_dataloader_indices(self.train_data_len)
             batches_per_epoch = (
                 len(train_indices) // self.config["batch_size"]
@@ -497,27 +446,30 @@ class PreTrainer(Trainer):
             )
             try:
                 for batch_idx in range(batches_per_epoch):
-                    self.training_step(epoch, self.iter_num, train_indices, batch_idx)
+                    self.training_step(epoch, self.training_state.iter_num, train_indices, batch_idx)
                     self.pbar.update()
                     self.pbar.set_postfix_str(
-                        f"lr {self.lr:.2e}, loss {self.current_loss:.4f}, "
-                        f"tokens {self.observed_tokens_count:,}"
+                        f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
+                        f"tokens {self.training_state.observed_tokens_count:,}"
                     )
                     self.iter_num += 1
 
                 # save checkpoint at end of epoch
                 if self.config["master_process"]:
-                    self.save_checkpoint(epoch + 1, self.iter_num)
+                    self.training_state.epoch = epoch + 1
+                    self.save_checkpoint()
 
             except KeyboardInterrupt:
-                self.save_checkpoint(epoch, self.iter_num)
+                self.save_checkpoint()
                 self.pbar.close()
                 print("Exiting from training early.")
                 break
 
             except RuntimeError as e:
-                self._runtime_error_exit(e)
-                break
+                continue_training = self._handle_run_time_error(e)
+                if not continue_training:
+                    print("Exiting from training due to error.")
+                    break
 
         self.pbar.close()
         print(f"exiting training - epoch {epoch}, iter {self.iter_num}")

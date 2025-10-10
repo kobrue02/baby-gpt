@@ -4,7 +4,7 @@ Wrapper script to launch training.
 
 if __name__ == "__main__":
     import argparse
-    from training.pretraining.training_utils import PreTrainer
+    from training.pretraining.pretrainer import PreTrainer
 
     parser = argparse.ArgumentParser(description="Train GPT model")
     parser.add_argument(
