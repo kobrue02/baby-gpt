@@ -44,6 +44,10 @@ class Trainer(ABC):
         return self.training_state.scaler
 
     @property
+    def scheduler(self):
+        return self.training_state.scheduler
+
+    @property
     def epoch(self):
         return self.training_state.epoch
 
@@ -214,17 +218,23 @@ class Trainer(ABC):
 
     def update_optimizer_lr(self, iter_num):
         """
-        Get and set the learning rate for the current iteration
+        Get and set the learning rate for the current iteration.
+        Uses PyTorch scheduler if available, otherwise falls back to manual schedule.
         Args:
             iter_num (int): The current iteration number.
         """
-        self.training_state.lr = (
-            self.get_lr(iter_num)
-            if self.config["decay_lr"]
-            else self.config["learning_rate"]
-        )
-        for param_group in self.training_state.optimizer.param_groups:
-            param_group["lr"] = self.training_state.lr
+        if self.training_state.scheduler is not None:
+            # Use PyTorch scheduler
+            self.training_state.lr = self.training_state.optimizer.param_groups[0]["lr"]
+        else:
+            # Fallback to manual scheduling
+            self.training_state.lr = (
+                self.get_lr(iter_num)
+                if self.config["decay_lr"]
+                else self.config["learning_rate"]
+            )
+            for param_group in self.training_state.optimizer.param_groups:
+                param_group["lr"] = self.training_state.lr
 
     def init_optimizer_and_scaler(self, model=None):
         """Initialize the optimizer and gradient scaler."""
@@ -241,6 +251,51 @@ class Trainer(ABC):
             self.device_type,
         )
         return optimizer, scaler
+
+    def init_scheduler(self, optimizer, total_steps):
+        """
+        Initialize a PyTorch LR scheduler appropriate for pretraining.
+        Uses CosineAnnealingLR with warmup for stable training.
+
+        Args:
+            optimizer: The optimizer to schedule
+            total_steps: Total number of training steps
+
+        Returns:
+            torch.optim.lr_scheduler or None if scheduler is disabled
+        """
+        if not self.config.get("use_pytorch_scheduler", False):
+            return None
+
+        warmup_iters = self.config.get("warmup_iters", 0)
+
+        if warmup_iters > 0:
+            # Create a warmup + cosine annealing scheduler
+            scheduler1 = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=0.01,  # Start at 1% of base LR
+                end_factor=1.0,
+                total_iters=warmup_iters
+            )
+            scheduler2 = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps - warmup_iters,
+                eta_min=self.config.get("min_lr", 0.0)
+            )
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[scheduler1, scheduler2],
+                milestones=[warmup_iters]
+            )
+        else:
+            # Just use cosine annealing without warmup
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps,
+                eta_min=self.config.get("min_lr", 0.0)
+            )
+
+        return scheduler
 
     def init_eval_state(self):
         """Initialize the evaluation state with default values."""
@@ -311,7 +366,7 @@ class Trainer(ABC):
     def _load_states(self, checkpoint):
         """Load training and evaluation states from checkpoint."""
         self.training_state = TrainingState.from_checkpoint(
-            checkpoint, self.model, self.raw_model, self.optimizer, self.scaler
+            checkpoint, self.model, self.raw_model, self.optimizer, self.scaler, self.scheduler
         )
         wandb_msg = f" (wandb run ID: {self.training_state.wandb_run_id})" if self.training_state.wandb_run_id else ""
         print(

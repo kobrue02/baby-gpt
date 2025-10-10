@@ -13,6 +13,7 @@ class TrainingState:
         scaler: Optional[torch.cuda.amp.GradScaler | torch.amp.GradScaler] # type: ignore
     except AttributeError:
         scaler: Optional[torch.cuda.amp.GradScaler] # old PyTorch version
+    scheduler: Optional[torch.optim.lr_scheduler.LRScheduler]
     epoch: int
     iter_num: int
     lr: float
@@ -23,7 +24,7 @@ class TrainingState:
     current_loss: float = 0.0
 
     @classmethod
-    def from_checkpoint(cls, checkpoint: dict, model: Transformer, raw_model, optimizer, scaler) -> "TrainingState":
+    def from_checkpoint(cls, checkpoint: dict, model: Transformer, raw_model, optimizer, scaler, scheduler=None) -> "TrainingState":
         # load model state
         state_dict = checkpoint["model"]
         for k in list(state_dict.keys()):
@@ -33,6 +34,11 @@ class TrainingState:
         # load into the raw (uncompiled) model
         raw_model.load_state_dict(state_dict)
         optimizer.load_state_dict(checkpoint["optimizer"])
+
+        # load scheduler state if available
+        if scheduler is not None and "scheduler" in checkpoint:
+            scheduler.load_state_dict(checkpoint["scheduler"])
+
         epoch = checkpoint.get("epoch", 0)
         iter_num = checkpoint.get("iter_num", 0)
         best_val_loss = checkpoint["best_val_loss"]
@@ -47,6 +53,7 @@ class TrainingState:
             raw_model=raw_model,
             optimizer=optimizer,
             scaler=scaler,
+            scheduler=scheduler,
             epoch=epoch,
             iter_num=iter_num,
             lr=lr,
@@ -59,7 +66,7 @@ class TrainingState:
 
     def to_checkpoint_dict(self) -> dict:
         """Convert training state to checkpoint dictionary."""
-        return {
+        checkpoint = {
             "model": self.raw_model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
             "epoch": self.epoch,
@@ -70,6 +77,10 @@ class TrainingState:
             "observed_tokens_count": self.observed_tokens_count,
             "current_loss": self.current_loss,
         }
+        # Save scheduler state if available
+        if self.scheduler is not None:
+            checkpoint["scheduler"] = self.scheduler.state_dict()
+        return checkpoint
 
 
 @dataclass

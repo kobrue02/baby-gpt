@@ -91,12 +91,17 @@ class PreTrainer(Trainer):
         )
         # initialize optimizer and scaler, passing model explicitly
         optimizer, scaler = self.init_optimizer_and_scaler(model=model)
+
+        # initialize scheduler with total steps
+        scheduler = self.init_scheduler(optimizer, self.total_steps)
+
         lr = self.config["learning_rate"]
         return TrainingState(
             model=model,
             raw_model=raw_model,
             optimizer=optimizer,
             scaler=scaler,
+            scheduler=scheduler,
             epoch=0,
             lr=lr,
             iter_num=0,
@@ -353,7 +358,11 @@ class PreTrainer(Trainer):
 
         # else, perform the forward/backward pass and clear memory
         self.forward_backward(train_indices, batch_idx)
-        
+
+        # step the scheduler if using PyTorch scheduler
+        if self.training_state.scheduler is not None:
+            self.training_state.scheduler.step()
+
         if self.device_type == "mps":
             cleanup_mps_memory()
         elif self.device_type == "cuda":
