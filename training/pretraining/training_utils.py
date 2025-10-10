@@ -241,7 +241,6 @@ class PreTrainer(Trainer):
     @torch.no_grad()
     def estimate_loss(self):
         out = {}
-        self.model.eval()
         for split in ["train", "val"]:
             losses = torch.zeros(self.config["eval_iters"])
             # Create temporary indices for evaluation
@@ -255,7 +254,6 @@ class PreTrainer(Trainer):
                     _, loss = self.model(self.X, self.Y)
                 losses[k] = loss.item()
             out[split] = losses.mean()
-        self.model.train()
         return out
     
     def _perform_gradient_accumulation_steps(self, train_indices, batch_idx):
@@ -403,9 +401,9 @@ class PreTrainer(Trainer):
 
     def eval_step(self, epoch, iter_num=0):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
+        self.model.eval()
         losses = self.estimate_loss()
         mean_pplx = self.get_mean_perplexity()
-
         if self.wandb_logger:
             self.wandb_logger.log(
                 {
@@ -421,6 +419,8 @@ class PreTrainer(Trainer):
             self.best_val_loss = losses["val"]
             if iter_num > 0:
                 self.save_checkpoint(epoch, iter_num)
+
+        self.model.train()
 
     def training_step(self, epoch, iter_num, train_indices, batch_idx):
         """Perform a single training step."""
