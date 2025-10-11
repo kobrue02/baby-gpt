@@ -7,35 +7,33 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 
 import sys
 from datasets import load_dataset, DatasetDict, Dataset, IterableDataset, IterableDatasetDict
-from data.utils import process, to_bins
+from data_loaders.utils import process, to_bins
 from tqdm import tqdm
 
 
 def get_dataset_splits(dataset_key, subset=None, n_items=None, test_size=0.001, seed=42):
-    print(f"Loading first {n_items} shards from {dataset_key} dataset...")
+    if n_items:
+        print(f"Loading first {n_items} shards from {dataset_key} dataset...")
+    else:
+        print(f"Loading full {dataset_key} dataset...")
+    if subset:
+        print(f"Using subset: {subset}")
     # Load dataset in streaming mode to get first n_shards worth of data
     # Stream the dataset and take only what we need
     ds: Dataset | DatasetDict | IterableDataset | IterableDatasetDict
-    if not subset:
-        if n_items:
-            ds = load_dataset(dataset_key, split="train", streaming=True)
-            ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
-            ds = Dataset.from_list(ds_list)
-        else:
-            ds = load_dataset(dataset_key, split="train")
+    if n_items:
+        ds = load_dataset(dataset_key, name=subset, split="train", streaming=True)
+        ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
+        ds = Dataset.from_list(ds_list)
     else:
-        if n_items:
-            ds = load_dataset(dataset_key, subset, split="train", streaming=True)
-            ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
-            ds = Dataset.from_list(ds_list)
-        else:
-            ds = load_dataset(dataset_key, subset, split="train")
+        ds = load_dataset(dataset_key, name=subset, split="train")
 
     # Remove all columns except 'text'
     ds = ds.remove_columns([col for col in ds.column_names if col != "text"]) # type: ignore
     # Create train/val split
     splits = ds.train_test_split(test_size=0.001, seed=42) # type: ignore
     split_dataset = DatasetDict({"train": splits["train"], "val": splits["test"]})
+    
     return split_dataset
 
 

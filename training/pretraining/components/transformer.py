@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from jaxtyping import Float, jaxtyped, Int64
 from beartype import beartype as typechecker
 
-from data.utils import enc
+from data_loaders.utils import enc
 from training.configurator import GPTConfig
 from training.classes.transformer import Transformer
 from training.pretraining.components.blocks import Block, LayerNorm

@@ -37,7 +37,7 @@ def initialize_pretraining():
     This command downloads the specified number of shards from the dataset,
     tokenizes the data, and saves it in binary format for training.
     """
-    from data.pre import create_pretraining_dataset
+    from data_loaders.pre import create_pretraining_dataset
 
     dataset = "HuggingFaceTB/smollm-corpus"
     subset = "cosmopedia-v2"
@@ -62,7 +62,7 @@ def initialize_sft(
     This command downloads general knowledge Q&A pairs, processes them
     into the SFT format, and saves the tokenized data for training.
     """
-    from data.sft import create_sft_dataset
+    from data_loaders.sft import create_sft_dataset
 
     typer.echo(f"Initializing SFT dataset with {n_rows} rows...")
     create_sft_dataset(n_rows=n_rows)
@@ -258,7 +258,7 @@ def generate(
     from pathlib import Path
     from training.pretraining.components.transformer import GPTWithMHA
     from training.pretraining.components.blocks import GPTConfig
-    from data.utils import enc
+    from data_loaders.utils import enc
 
     # Determine checkpoint path
     if checkpoint is None:
@@ -361,7 +361,7 @@ def interactive(
     from training.pretraining.components.transformer import GPTWithMHA
     from training.pretraining.components.blocks import GPTConfig
     from inference.util import complete
-    from data.utils import enc
+    from data_loaders.utils import enc
 
     # Determine checkpoint path
     if checkpoint is None:
