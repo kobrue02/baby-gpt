@@ -357,22 +357,14 @@ class PreTrainer(Trainer):
 
         self.training_state.model.train()
 
-    def training_step(self, epoch, iter_num, train_indices, batch_idx):
+    def training_step(self, train_indices, batch_idx):
         """Perform a single training step."""
 
         # determine and set the learning rate for this iteration
-        self.update_optimizer_lr(iter_num)
-
-        # evaluate the loss on train/val sets and write checkpoints
-        if (
-            iter_num % self.config["eval_interval"] == 0
-            and self.config["master_process"]
-            and (iter_num > 0 or epoch > 0)
-        ):
-            self.eval_step(epoch, iter_num)
+        self.update_optimizer_lr(self.training_state.iter_num)
 
         # at the end of training, we can skip the final forward/backward pass
-        if iter_num == 0 and self.config["eval_only"]:
+        if self.training_state.iter_num == 0 and self.config["eval_only"]:
             return
 
         # else, perform the forward/backward pass and clear memory
@@ -448,17 +440,29 @@ class PreTrainer(Trainer):
             )
             try:
                 for batch_idx in range(batches_per_epoch):
+                    if (
+                        self.training_state.iter_num % self.config["eval_interval"] == 0
+                        and self.config["master_process"]
+                        and (self.training_state.iter_num > 0 or self.training_state.epoch > 0)
+                    ):
+                        self.eval_step(self.training_state.epoch, self.training_state.iter_num)
+                    
                     start_time = time.time()
-                    self.training_step(epoch, self.training_state.iter_num, train_indices, batch_idx)
+                    self.training_step(train_indices, batch_idx)
+                    end_time = time.time()
+
                     self.pbar.update()
                     self.pbar.set_postfix_str(
                         f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
                         f"tokens {self.training_state.observed_tokens_count:,}"
                     )
                     self.training_state.iter_num += 1
-                    end_time = time.time()
                     self.training_state.batch_process_time = end_time - start_time
-                    if self.training_state.iter_num % self.config["log_interval"] == 0 and self.wandb_logger:
+                    
+                    if (
+                        self.training_state.iter_num % self.config["log_interval"] == 0 
+                        and self.wandb_logger
+                    ):
                         self.wandb_logger.log(self.training_state.log_state())
 
                 # save checkpoint at end of epoch
