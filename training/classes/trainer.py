@@ -256,7 +256,6 @@ class Trainer(ABC):
             self.config["weight_decay"],
             self.config["learning_rate"],
             (self.config["beta1"], self.config["beta2"]),
-            self.device_type,
         )
         return optimizer, scaler
 
