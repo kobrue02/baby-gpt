@@ -16,12 +16,11 @@ from beartype import beartype as typechecker
 
 from data_loaders.utils import enc
 from training.configurator import GPTConfig
-from training.classes.transformer import Transformer
+from training.classes.transformer import Transformer, TransformerTimeConsumption
 from training.pretraining.components.blocks import Block, LayerNorm
 from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
 from training.pretraining.components.loss import compute_goldfish_loss
 from training.pretraining.components.yarn import LlamaYaRNScaledRotaryEmbedding
-from training.classes.states import TransformerTimeConsumption
 
 import torch
 import torch.nn.functional as F
