@@ -39,16 +39,34 @@ class SFTLoader(BaseDatasetLoader):
         n_items = self.config.n_items or 10000
         ds_list = list(tqdm(ds.take(n_items), total=n_items, desc="Loading examples"))  # type: ignore
         ds = Dataset.from_list(ds_list)
-
-        # Keep only Question and Answer columns (adjust for other datasets)
-        columns_to_keep = ["Question", "Answer"]
-        columns_to_remove = [
-            col for col in ds.column_names if col not in columns_to_keep
-        ]
+        columns_to_keep = []
+        if (
+            "question" in ds.column_names and "answer" in ds.column_names
+        ) or (
+            "Question" in ds.column_names and "Answer" in ds.column_names
+        ):
+            # Keep only Question and Answer columns (adjust for other datasets)
+            columns_to_keep = ["question", "answer"]
+            columns_to_remove = [
+                col for col in ds.column_names if col.lower() not in columns_to_keep
+            ]
+        elif ( # prime intellect stack exchange
+            "prompt" in ds.column_names and "gold_standard_solution" in ds.column_names
+        ):
+            columns_to_keep = ["prompt", "gold_standard_solution"]
+            columns_to_remove = [
+                col for col in ds.column_names if col.lower() not in columns_to_keep
+            ]
+            # rename to standard names
+            ds = ds.rename_columns({
+                "prompt": "question",
+                "gold_standard_solution": "answer"
+            })
+        
         if columns_to_remove:
             ds = ds.remove_columns(columns_to_remove)
 
-        # Create train/val split
+        # create train/val split
         splits = ds.train_test_split(
             test_size=self.config.test_size, seed=self.config.seed
         )
@@ -77,7 +95,7 @@ class SFTLoader(BaseDatasetLoader):
             f"Kept {len(dataset['train'])} train and {len(dataset['val'])} val examples"
         )
 
-        # Ensure we have enough validation examples
+        # we should have enough validation examples
         if len(dataset["val"]) < self.min_val_examples:
             raise ValueError(
                 f"Not enough validation examples: got {len(dataset['val'])}, "
@@ -111,11 +129,10 @@ class SFTLoader(BaseDatasetLoader):
         n_items = self.config.n_items or 10000
         print(f"Loading {n_items} items")
 
-        # Use streaming mode if enabled
         if self.streaming:
             print("Using streaming mode (saves disk space by not caching dataset)")
 
-            # Load as streaming dataset
+            # streaming dataset
             ds = load_dataset(
                 self.config.dataset_key,
                 name=self.config.subset,
@@ -123,7 +140,6 @@ class SFTLoader(BaseDatasetLoader):
                 streaming=True,
             )
 
-            # Stream directly to bins
             stream_to_bin_sft(
                 ds,
                 n_items=n_items,
@@ -134,7 +150,7 @@ class SFTLoader(BaseDatasetLoader):
 
             print("Dataset created successfully!")
         else:
-            # Use the original method (loads full dataset into memory/cache)
+            # loads full dataset into memory/cache
             print("Using non-streaming mode (dataset will be cached to disk)")
 
             dataset = self.load_dataset()
