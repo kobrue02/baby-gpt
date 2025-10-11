@@ -19,6 +19,7 @@ warnings.filterwarnings(
 from tqdm import tqdm
 from training.classes.trainer import Trainer
 from training.classes.states import TrainingState
+from training.classes.transformer import Transformer
 from training.pretraining.components.transformer import GPTWithMHA
 from training.pretraining.components.blocks import GPTConfig
 from training.configurator import load_config
@@ -428,6 +429,10 @@ class PreTrainer(Trainer):
         """
         Train the model using epoch-based training.
         """
+        assert isinstance(self.training_state, TrainingState), "Training state not initialized"
+        assert isinstance(self.training_state.model, Transformer), "Model not initialized"
+        assert isinstance(self.eval_state, TrainingState), "Eval state not initialized"
+
         for epoch in range(self.training_state.epoch, self.config["n_epochs"]):
             train_indices = self._create_dataloader_indices(self.train_data_len)
             batches_per_epoch = (
@@ -464,6 +469,10 @@ class PreTrainer(Trainer):
                         and self.wandb_logger
                     ):
                         self.wandb_logger.log(self.training_state.log_state())
+                        self.wandb_logger.log(
+                            self.training_state.model.time_consumption.log_state(), step=self.training_state.iter_num
+                        )
+                        self.training_state.model.time_consumption.reset()
 
                 # save checkpoint at end of epoch
                 if self.config["master_process"]:

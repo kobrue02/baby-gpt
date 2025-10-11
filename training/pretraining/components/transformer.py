@@ -5,6 +5,7 @@ And uses the PackedSwiGLUFFN activation from act.py, instead of the standard GEL
 """
 
 import torch
+import time
 import math
 
 from torch import nn, Tensor
@@ -20,7 +21,7 @@ from training.pretraining.components.blocks import Block, LayerNorm
 from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
 from training.pretraining.components.loss import compute_goldfish_loss
 from training.pretraining.components.yarn import LlamaYaRNScaledRotaryEmbedding
-
+from training.classes.states import TransformerTimeConsumption
 
 import torch
 import torch.nn.functional as F
@@ -34,7 +35,7 @@ class GPTWithMHA(Transformer):
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
-
+        self.time_consumption = TransformerTimeConsumption()
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
 
         self.wpe = nn.Embedding(
@@ -99,6 +100,13 @@ class GPTWithMHA(Transformer):
         idx: Int64[torch.Tensor, "batch_size sequence_length"],
         targets: Int64[torch.Tensor, "batch_size sequence_length"] | None = None,
     ):
+        """
+        Forward pass through the model.
+        If targets is given, also compute the loss.
+        idx and targets are both (B,T) tensors of integers
+        """
+        total_start_time = time.time()
+
         device = idx.device
         _, t = idx.size()
         assert (
@@ -106,30 +114,46 @@ class GPTWithMHA(Transformer):
         ), f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
 
         # forward the GPT model itself
-        tok_emb = self.wte(idx)  # token embeddings of shape (b, t, n_embd)
 
+        start_time = time.time()
+        tok_emb = self.wte(idx)  # token embeddings of shape (b, t, n_embd)
+        self.time_consumption.embedding_time += time.time() - start_time
+
+        start_time = time.time()
         if not self.config.use_rotary:
             pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
             pos_emb = self.wpe(pos)  # position embeddings of shape (t, n_embd)
             x = self.transformer.drop(tok_emb + pos_emb)  # type: ignore
         else:
             x = self.transformer.drop(tok_emb)  # type: ignore
+        self.time_consumption.dropout_time += time.time() - start_time
 
+        start_time = time.time()
         for block in self.transformer.h:  # type: ignore
             x = block(x)
+        self.time_consumption.hidden_time += time.time() - start_time
+
+        start_time = time.time()
         x = self.transformer.ln_f(x)  # type: ignore
+        self.time_consumption.layernorm_time += time.time() - start_time
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
+            start_time = time.time()
             logits = self.lm_head(x)
+            self.time_consumption.lm_head_time += time.time() - start_time
             loss = self.compute_loss(logits, targets)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
+            start_time = time.time()
             logits = self.lm_head(
                 x[:, [-1], :]
             )  # note: using list [-1] to preserve the time dim
+            self.time_consumption.lm_head_time += time.time() - start_time
             loss = None
-
+        
+        self.time_consumption.total_forward_time += time.time() - total_start_time
+        
         return logits, loss
 
     @jaxtyped(typechecker=typechecker)
@@ -154,7 +178,6 @@ class GPTWithMHA(Transformer):
         weight_decay: Float,
         learning_rate: Float,
         betas: tuple[Float, Float],
-        device_type,
     ):
 
         # acc to muon paper
@@ -190,8 +213,6 @@ class GPTWithMHA(Transformer):
         print(
             f"training {sum(p.numel() for p in hidden_weights + hidden_gains_biases + nonhidden_params)} trainable parameters"
         )
-        # Create AdamW optimizer and use the fused version if it is available
-        # optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas)
         optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
         return optimizer
 

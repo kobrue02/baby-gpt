@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from abc import ABC, abstractmethod
 from typing import Any
+from training.classes.states import TransformerTimeConsumption
 
 
 class Transformer(ABC, nn.Module):
@@ -19,6 +20,7 @@ class Transformer(ABC, nn.Module):
         self.config: Any
         self.transformer: nn.ModuleDict
         self.lm_head: nn.Linear
+        self.time_consumption: TransformerTimeConsumption
 
     def get_num_params(self, non_embedding=True):
         """
