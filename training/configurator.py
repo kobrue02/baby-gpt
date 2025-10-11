@@ -65,7 +65,7 @@ def get_device_config(config_type: str = "pretrain"):
         elif n_gpus == 1:
             gpu_mem = gpu_mem[0]
             if 9000 <= gpu_mem < 15000:
-                block_size = 1024
+                block_size = 512
                 batch_size = 4
                 grad_accum_steps = 8
             elif 15000 <= gpu_mem < 17000:
