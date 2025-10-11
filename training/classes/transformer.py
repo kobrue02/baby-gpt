@@ -5,17 +5,20 @@ And uses the PackedSwiGLUFFN activation from act.py, instead of the standard GEL
 """
 
 import torch
+
 from dataclasses import dataclass
 from torch import nn
 from abc import ABC, abstractmethod
 from typing import Any
 
+from training.pretraining.components.blocks import BlockTimeConsumption
 
 @dataclass
 class TransformerTimeConsumption:
     embedding_time: float = 0.0
     dropout_time: float = 0.0
     hidden_time: float = 0.0
+    block: BlockTimeConsumption = BlockTimeConsumption()
     layernorm_time: float = 0.0
     lm_head_time: float = 0.0
     total_forward_time: float = 0.0
@@ -27,6 +30,7 @@ class TransformerTimeConsumption:
         self.layernorm_time = 0.0
         self.lm_head_time = 0.0
         self.total_forward_time = 0.0
+        self.block.reset()
     
     def log_state(self):
         return {
@@ -36,6 +40,7 @@ class TransformerTimeConsumption:
             "time/layernorm_time": self.layernorm_time,
             "time/lm_head_time": self.lm_head_time,
             "time/total_forward_time": self.total_forward_time,
+            **{f"time/{k}": v for k, v in self.block.__dict__().items()},
         }
 
 

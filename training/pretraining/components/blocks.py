@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,6 +11,25 @@ from training.configurator import GPTConfig
 from dataclasses import dataclass
 from jaxtyping import Float, jaxtyped, Int64
 from beartype import beartype as typechecker
+
+
+@dataclass
+class BlockTimeConsumption:
+    attn_time: float = 0.0
+    mlp_time: float = 0.0
+    total_block_time: float = 0.0
+
+    def reset(self):
+        self.attn_time = 0.0
+        self.mlp_time = 0.0
+        self.total_block_time = 0.0
+
+    def __dict__(self):
+        return {
+            "block_attn_time": self.attn_time,
+            "block_mlp_time": self.mlp_time,
+            "block_total_block_time": self.total_block_time,
+        }
 
 
 class MLP(nn.Module):
@@ -72,7 +92,11 @@ class Block(nn.Module):
     @jaxtyped(typechecker=typechecker)
     def forward(
         self, x: Float[Tensor, "batch_size sequence_length n_embd"]
-    ) -> Float[Tensor, "batch_size sequence_length n_embd"]:
+    ) -> tuple[Float[Tensor, "batch_size sequence_length n_embd"], float, float]:
+        start_time = time.time()
         x = x + self.attn(self.ln_1(x), is_causal=True)
+        attn_time = time.time() - start_time
+        start_time = time.time()
         x = x + self.mlp(self.ln_2(x))
-        return x
+        mlp_time = time.time() - start_time
+        return x, attn_time, mlp_time

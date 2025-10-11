@@ -17,7 +17,7 @@ from beartype import beartype as typechecker
 from data_loaders.utils import enc
 from training.configurator import GPTConfig
 from training.classes.transformer import Transformer, TransformerTimeConsumption
-from training.pretraining.components.blocks import Block, LayerNorm
+from training.pretraining.components.blocks import Block, LayerNorm, BlockTimeConsumption
 from training.pretraining.components.muon_optim import SingleDeviceMuonWithAuxAdam
 from training.pretraining.components.loss import compute_goldfish_loss
 from training.pretraining.components.yarn import LlamaYaRNScaledRotaryEmbedding
@@ -129,7 +129,10 @@ class GPTWithMHA(Transformer):
 
         start_time = time.time()
         for block in self.transformer.h:  # type: ignore
-            x = block(x)
+            x, attn_time, mlp_time = block(x)
+            self.time_consumption.block.attn_time += attn_time
+            self.time_consumption.block.mlp_time += mlp_time
+            self.time_consumption.block.total_block_time += attn_time + mlp_time
         self.time_consumption.hidden_time += time.time() - start_time
 
         start_time = time.time()
