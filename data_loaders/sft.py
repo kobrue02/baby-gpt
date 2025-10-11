@@ -1,6 +1,6 @@
 import sys
 from datasets import load_dataset, DatasetDict, Dataset
-from data.utils import to_bins, process_sft
+from data_loaders.utils import to_bins, process_sft
 from tqdm import tqdm
 
 

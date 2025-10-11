@@ -6,6 +6,7 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 # https://github.com/HazyResearch/flash-attention/blob/main/training/src/datamodules/language_modeling_hf.py
 
 import os
+import sys
 import numpy as np
 import tiktoken
 import re
@@ -194,3 +195,12 @@ def to_bins(tokenized, suffix="", is_sft=False):
             tokens = memmap(split, dset, dtype, suffix)
         # flush to disk
         tokens.flush()
+
+
+def clear_console():
+    # Check if running inside Jupyter
+    if 'ipykernel' in sys.modules:
+        from IPython.display import clear_output
+        clear_output(wait=True)
+    else:
+        os.system('cls' if os.name == 'nt' else 'clear')
