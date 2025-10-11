@@ -181,7 +181,7 @@ class MultiHeadAttention(nn.Module):
         
         # Step 1. Apply input projection and split into q, k, v
         qkv = self.c_attn(x)  # (B, T, 3 * E_total)
-        q, k, v = qkv.split(self.embedding_dim, dim=2)  # Each is (B, T, E_total)
+        q, k, v = qkv.split(C, dim=2)  # Each is (B, T, E_total)
 
         # Step 2. Split heads and prepare for SDPA
         # reshape q, k, v to separate by head
@@ -227,7 +227,7 @@ class MultiHeadAttention(nn.Module):
             )
 
         # (B, nheads, T, E_head) -> (B, T, nheads, E_head) -> (B, T, E_total)
-        attn_output = attn_output.transpose(1, 2).reshape(B, T, self.embedding_dim)
+        attn_output = attn_output.transpose(1, 2).reshape(B, T, C)
 
         # Step 4. Apply output projection
         # (B, T, E_total) -> (B, T, E_out)
