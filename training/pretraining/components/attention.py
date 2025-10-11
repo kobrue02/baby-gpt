@@ -135,6 +135,7 @@ class MultiHeadAttention(nn.Module):
                 device=device,
             )
             self.precompute_rotary_emb(device=device, dtype=dtype)
+        self.precompute_causal_mask()
 
     def precompute_causal_mask(self):
         max_seq_len = self.config.block_size if self.config is not None else 2048
@@ -180,7 +181,7 @@ class MultiHeadAttention(nn.Module):
         
         # Step 1. Apply input projection and split into q, k, v
         qkv = self.c_attn(x)  # (B, T, 3 * E_total)
-        q, k, v = qkv.split(C, dim=2)  # Each is (B, T, E_total)
+        q, k, v = qkv.split(self.embedding_dim, dim=2)  # Each is (B, T, E_total)
 
         # Step 2. Split heads and prepare for SDPA
         # reshape q, k, v to separate by head
