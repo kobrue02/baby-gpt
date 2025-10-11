@@ -233,7 +233,7 @@ def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001,
 
     Args:
         iterable_dataset: HuggingFace IterableDataset
-        n_items: Total number of items to process
+        n_items: Total number of items to process (None for full dataset)
         suffix: Suffix for output files
         test_size: Proportion for validation split
         seed: Random seed
@@ -248,40 +248,58 @@ def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001,
 
     dtype = np.uint16
 
-    # Determine split indices
-    n_val = max(1, int(n_items * test_size))
-    n_train = n_items - n_val
-
-    # Create random indices for train/val split
-    rng = np.random.default_rng(seed)
-    indices = np.arange(n_items)
-    rng.shuffle(indices)
-    val_indices = set(indices[:n_val].tolist())
-
     # Open binary files for writing
     train_file = os.path.join(data_directory, f"train_{suffix}.bin")
     val_file = os.path.join(data_directory, f"val_{suffix}.bin")
 
     print(f"Streaming to {train_file} and {val_file}...")
-    print(f"Train examples: {n_train}, Val examples: {n_val}")
+
+    # Random number generator for train/val split
+    rng = np.random.default_rng(seed)
 
     # First pass: collect tokens to write
     train_tokens = []
     val_tokens = []
 
-    for idx, example in enumerate(tqdm(iterable_dataset, total=n_items, desc="Streaming and tokenizing")):
-        if idx >= n_items:
-            break
+    # If n_items is specified, we know the total and can pre-compute val indices
+    if n_items is not None:
+        n_val = max(1, int(n_items * test_size))
+        n_train = n_items - n_val
+        print(f"Train examples: {n_train}, Val examples: {n_val}")
 
-        # Process the example
-        processed = process_fn(example)
-        ids = processed["ids"]
+        # Create random indices for train/val split
+        indices = np.arange(n_items)
+        rng.shuffle(indices)
+        val_indices = set(indices[:n_val].tolist())
 
-        # Add to appropriate split
-        if idx in val_indices:
-            val_tokens.extend(ids)
-        else:
-            train_tokens.extend(ids)
+        for idx, example in enumerate(tqdm(iterable_dataset, total=n_items, desc="Streaming and tokenizing")):
+            if idx >= n_items:
+                break
+
+            # Process the example
+            processed = process_fn(example)
+            ids = processed["ids"]
+
+            # Add to appropriate split
+            if idx in val_indices:
+                val_tokens.extend(ids)
+            else:
+                train_tokens.extend(ids)
+    else:
+        # Full dataset - we don't know the total count upfront
+        # Use random sampling for train/val split
+        print(f"Streaming full dataset (val split: {test_size*100:.1f}%)")
+
+        for example in tqdm(iterable_dataset, desc="Streaming and tokenizing", unit=" examples"):
+            # Process the example
+            processed = process_fn(example)
+            ids = processed["ids"]
+
+            # Randomly assign to train or val based on test_size
+            if rng.random() < test_size:
+                val_tokens.extend(ids)
+            else:
+                train_tokens.extend(ids)
 
     clear_console()
 

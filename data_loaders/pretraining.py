@@ -2,7 +2,7 @@
 Pretraining dataset loader.
 """
 
-from datasets import load_dataset, Dataset, DatasetDict, IterableDataset
+from datasets import load_dataset, Dataset, DatasetDict
 from tqdm import tqdm
 
 from data_loaders.base import BaseDatasetLoader, DatasetConfig
@@ -33,6 +33,8 @@ class PretrainingLoader(BaseDatasetLoader):
                 split="train",
                 streaming=True,
             )
+            # Shuffle to read from multiple files in parallel
+            ds = ds.shuffle(seed=self.config.seed, buffer_size=10000) # type: ignore
             ds_list = list(
                 tqdm(ds.take(self.config.n_items), total=self.config.n_items, desc="Loading examples")  # type: ignore
             )
@@ -79,9 +81,11 @@ class PretrainingLoader(BaseDatasetLoader):
             print(f"Using subset: {self.config.subset}")
         if self.config.n_items:
             print(f"Loading {self.config.n_items} items")
+        else:
+            print("Loading full dataset")
 
-        # Use streaming mode if n_items is specified and streaming is enabled
-        if self.streaming and self.config.n_items:
+        # Use streaming mode by default unless explicitly disabled
+        if self.streaming:
             print("Using streaming mode (saves disk space by not caching dataset)")
 
             # Load as streaming dataset
@@ -91,6 +95,10 @@ class PretrainingLoader(BaseDatasetLoader):
                 split="train",
                 streaming=True,
             )
+
+            # Enable faster streaming by using multiple shards in parallel
+            # This prevents blocking on single file downloads
+            ds = ds.shuffle(seed=self.config.seed, buffer_size=10000) # type: ignore
 
             # Stream directly to bins
             stream_to_bin(
@@ -104,8 +112,7 @@ class PretrainingLoader(BaseDatasetLoader):
             print("Dataset created successfully!")
         else:
             # Use the original method (loads full dataset into memory/cache)
-            if not self.streaming:
-                print("Using non-streaming mode (dataset will be cached to disk)")
+            print("Using non-streaming mode (dataset will be cached to disk)")
 
             dataset = self.load_dataset()
             processed = self.process_dataset(dataset)
