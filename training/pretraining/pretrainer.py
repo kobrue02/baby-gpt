@@ -18,7 +18,7 @@ warnings.filterwarnings(
 
 from tqdm import tqdm
 from training.classes.trainer import Trainer
-from training.classes.states import TrainingState
+from training.classes.states import TrainingState, EvaluationState
 from training.classes.transformer import Transformer
 from training.pretraining.components.transformer import GPTWithMHA
 from training.pretraining.components.blocks import GPTConfig
@@ -431,7 +431,7 @@ class PreTrainer(Trainer):
         """
         assert isinstance(self.training_state, TrainingState), "Training state not initialized"
         assert isinstance(self.training_state.model, Transformer), "Model not initialized"
-        assert isinstance(self.eval_state, TrainingState), "Eval state not initialized"
+        assert isinstance(self.eval_state, EvaluationState), "Eval state not initialized"
 
         for epoch in range(self.training_state.epoch, self.config["n_epochs"]):
             train_indices = self._create_dataloader_indices(self.train_data_len)
