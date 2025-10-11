@@ -88,6 +88,7 @@ class MultiHeadAttention(nn.Module):
     """
     sin_cached: torch.Tensor
     cos_cached: torch.Tensor
+    causal_mask_cached: torch.Tensor
 
     def __init__(
         self,
@@ -105,19 +106,18 @@ class MultiHeadAttention(nn.Module):
     ):
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
+        
+        self.config = config
         self.nheads = nheads
         self.dropout = dropout
         self.c_attn = nn.Linear(E_q, E_total * 3, bias=bias, **factory_kwargs)
-        E_out = E_q
-        self.out_proj = nn.Linear(E_total, E_out, bias=bias, **factory_kwargs)
+        self.out_proj = nn.Linear(E_total, E_q, bias=bias, **factory_kwargs)
+        
         assert E_total % nheads == 0, "Embedding dim is not divisible by nheads"
         self.E_head = E_total // nheads
         self.embedding_dim = E_total
         self.bias = bias
 
-        L = config.block_size if config is not None else 2048
-        S = L
-        self.temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
         self.apply_rotary_emb = apply_rotary_emb
 
         if self.apply_rotary_emb:
@@ -135,6 +135,12 @@ class MultiHeadAttention(nn.Module):
                 device=device,
             )
             self.precompute_rotary_emb(device=device, dtype=dtype)
+
+    def precompute_causal_mask(self):
+        max_seq_len = self.config.block_size if self.config is not None else 2048
+        causal_mask = torch.ones(max_seq_len, max_seq_len, dtype=torch.bool).tril(diagonal=0)
+        # Register as buffer so it moves with model to different devices
+        self.register_buffer("causal_mask_cached", causal_mask, persistent=False)
     
     def precompute_rotary_emb(self, device=None, dtype=None):
         # Precompute and cache rotary embeddings for all positions
@@ -192,6 +198,7 @@ class MultiHeadAttention(nn.Module):
             sin = self.sin_cached[:, :T, :]
             query, key = apply_rotary_pos_emb(query, key, cos, sin)
 
+        temp_mask = self.causal_mask_cached[:T, :T]
         # Step 3. Run SDPA
         # (B, nheads, T, E_head)
         if torch.__version__ >= "2.0":
@@ -214,7 +221,7 @@ class MultiHeadAttention(nn.Module):
                 attn_mask=attn_mask,
                 dropout_p=(self.dropout if self.training else 0.0),
                 is_causal=is_causal,
-                temp_mask=self.temp_mask,
+                temp_mask=temp_mask,
                 training=self.training,
             )
 
