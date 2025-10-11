@@ -10,6 +10,8 @@ import sys
 import numpy as np
 import tiktoken
 import re
+
+from datasets import DatasetDict
 from tqdm import tqdm
 from string import punctuation
 
@@ -195,6 +197,23 @@ def to_bins(tokenized, suffix="", is_sft=False):
             tokens = memmap(split, dset, dtype, suffix)
         # flush to disk
         tokens.flush()
+
+
+def split_dataset_in_memory(ds, test_size=0.001, seed=42):
+    n = len(ds)
+    n_test = max(1, int(n * test_size))
+
+    rng = np.random.default_rng(seed)
+    idxs = np.arange(n)
+    rng.shuffle(idxs)
+
+    test_idxs = idxs[:n_test]
+    train_idxs = idxs[n_test:]
+
+    train_ds = ds.select(train_idxs)
+    val_ds = ds.select(test_idxs)
+
+    return DatasetDict({"train": train_ds, "val": val_ds})
 
 
 def clear_console():

@@ -7,7 +7,7 @@ Credits to Karpathy's nanoGPT repo for much of this code.
 
 import sys
 from datasets import load_dataset, DatasetDict, Dataset, IterableDataset, IterableDatasetDict
-from data_loaders.utils import process, to_bins, clear_console
+from data_loaders.utils import process, to_bins, clear_console, split_dataset_in_memory
 from tqdm import tqdm
 
 
@@ -32,10 +32,8 @@ def get_dataset_splits(dataset_key, subset=None, n_items=None, test_size=0.001, 
     ds = ds.remove_columns([col for col in ds.column_names if col != "text"]) # type: ignore
     clear_console() # its cluttered with tqdm bars otherwise
     # Create train/val split
-    splits = ds.train_test_split(test_size=0.001, seed=42) # type: ignore
-    split_dataset = DatasetDict({"train": splits["train"], "val": splits["test"]})
-    
-    return split_dataset
+    splits = split_dataset_in_memory(ds, test_size=test_size, seed=seed)
+    return splits
 
 
 def tokenize(dataset):
