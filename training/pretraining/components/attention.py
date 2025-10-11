@@ -227,7 +227,7 @@ class MultiHeadAttention(nn.Module):
             )
 
         # (B, nheads, T, E_head) -> (B, T, nheads, E_head) -> (B, T, E_total)
-        attn_output = attn_output.transpose(1, 2).reshape(B, T, C)
+        attn_output = attn_output.transpose(1, 2).reshape(B, T, self.embedding_dim)
 
         # Step 4. Apply output projection
         # (B, T, E_total) -> (B, T, E_out)
