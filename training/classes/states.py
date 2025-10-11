@@ -139,31 +139,3 @@ class EvaluationState:
     
     def __dict__(self):
         return self.log_state()
-    
-
-@dataclass
-class TransformerTimeConsumption:
-    embedding_time: float = 0.0
-    dropout_time: float = 0.0
-    hidden_time: float = 0.0
-    layernorm_time: float = 0.0
-    lm_head_time: float = 0.0
-    total_forward_time: float = 0.0
-
-    def reset(self):
-        self.embedding_time = 0.0
-        self.dropout_time = 0.0
-        self.hidden_time = 0.0
-        self.layernorm_time = 0.0
-        self.lm_head_time = 0.0
-        self.total_forward_time = 0.0
-    
-    def log_state(self):
-        return {
-            "time/embedding_time": self.embedding_time,
-            "time/dropout_time": self.dropout_time,
-            "time/hidden_time": self.hidden_time,
-            "time/layernorm_time": self.layernorm_time,
-            "time/lm_head_time": self.lm_head_time,
-            "time/total_forward_time": self.total_forward_time,
-        }
