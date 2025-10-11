@@ -120,11 +120,13 @@ def memmap(split, dset, dtype, suffix=""):
     """
     Take a tokenized dataset and save to binary files.
     """
+    data_directory = os.path.join(os.path.dirname(__file__), "../data")
+    data_directory = os.path.abspath(data_directory)
     arr_len = np.sum(dset["len"], dtype=np.uint64)  # type: ignore
     if suffix == "":
-        filename = os.path.join(os.path.dirname(__file__), f"{split}.bin")
+        filename = os.path.join(data_directory, f"{split}.bin")
     else:
-        filename = os.path.join(os.path.dirname(__file__), f"{split}_{suffix}.bin")
+        filename = os.path.join(data_directory, f"{split}_{suffix}.bin")
     arr = np.memmap(filename, dtype=dtype, mode="w+", shape=(arr_len,))  # type: ignore
     total_batches = min(1024, len(dset))
     idx = 0
@@ -145,12 +147,14 @@ def memmap_sft(split, dset, dtype, suffix="sft"):
     """
     Take a tokenized dataset and save to binary files for tokens and masks.
     """
+    data_directory = os.path.join(os.path.dirname(__file__), "../data")
+    data_directory = os.path.abspath(data_directory)
     arr_len = np.sum(dset["len"], dtype=np.uint64)
     token_file = os.path.join(
-        os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}.bin'
+        data_directory, f'{split}{"" if suffix=="" else "_"+suffix}.bin'
     )
     mask_file = os.path.join(
-        os.path.dirname(__file__), f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin'
+        data_directory, f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin'
     )
 
     tokens = np.memmap(token_file, dtype=dtype, mode="w+", shape=(arr_len,))  # type: ignore
