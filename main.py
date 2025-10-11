@@ -30,45 +30,177 @@ class TrainingMode(str, Enum):
 
 
 @initialize_app.command("pretraining")
-def initialize_pretraining():
+def initialize_pretraining(
+    dataset: Annotated[
+        str,
+        typer.Option(
+            "--dataset",
+            "-d",
+            help="Dataset name from registry (e.g., 'fineweb', 'smollm-corpus') or use --dataset-key for custom",
+        ),
+    ] = "smollm-corpus",
+    dataset_key: Annotated[
+        str,
+        typer.Option(
+            "--dataset-key",
+            help="Custom HuggingFace dataset key (e.g., 'HuggingFaceFW/fineweb')",
+        ),
+    ] = None,  # type: ignore
+    subset: Annotated[
+        str, typer.Option("--subset", help="Dataset subset name")
+    ] = None,  # type: ignore
+    n_items: Annotated[
+        int,
+        typer.Option(
+            "--n-items", "-n", help="Number of items to download (None for full dataset)"
+        ),
+    ] = None,  # type: ignore
+    test_size: Annotated[
+        float, typer.Option("--test-size", help="Validation split proportion")
+    ] = 0.001,
+    list_datasets: Annotated[
+        bool, typer.Option("--list", help="List available datasets and exit")
+    ] = False,
+    no_streaming: Annotated[
+        bool,
+        typer.Option(
+            "--no-streaming",
+            help="Disable streaming mode (uses more disk space but may be faster for small datasets)",
+        ),
+    ] = False,
+):
     """
     Initialize pretraining dataset by downloading and processing data.
 
-    This command downloads the specified number of shards from the dataset,
-    tokenizes the data, and saves it in binary format for training.
+    By default, uses streaming mode to save disk space by not caching the dataset.
+
+    Examples:
+        # Use a dataset from the registry (streaming mode)
+        python main.py initialize pretraining --dataset fineweb --n-items 10000
+
+        # Use a custom dataset
+        python main.py initialize pretraining --dataset-key HuggingFaceFW/fineweb --n-items 5000
+
+        # Disable streaming (cache dataset to disk)
+        python main.py initialize pretraining --dataset fineweb --n-items 10000 --no-streaming
+
+        # List available datasets
+        python main.py initialize pretraining --list
     """
-    from data_loaders.pre import create_pretraining_dataset
+    from data_loaders.registry import get_pretraining_loader, list_datasets as list_ds
 
-    dataset = "HuggingFaceTB/smollm-corpus"
-    subset = "cosmopedia-v2"
-    n_items = None
+    if list_datasets:
+        list_ds("pretraining")
+        return
 
-    typer.echo(f"Initializing pretraining {dataset}...")
-    create_pretraining_dataset(n_items=n_items, dataset_key=dataset, subset=subset)
-    typer.secho(
-        "Pretraining dataset initialized successfully!",
-        fg=typer.colors.GREEN,
-        bold=True,
-    )
+    typer.echo(f"Initializing pretraining dataset...")
+
+    try:
+        loader = get_pretraining_loader(
+            dataset_name=dataset,
+            n_items=n_items,
+            dataset_key=dataset_key,
+            subset=subset,
+            test_size=test_size,
+            streaming=not no_streaming,
+        )
+        loader.create_dataset(output_suffix="pretrain")
+
+        typer.secho(
+            "Pretraining dataset initialized successfully!",
+            fg=typer.colors.GREEN,
+            bold=True,
+        )
+    except ValueError as e:
+        typer.secho(f"Error: {e}", fg=typer.colors.RED, bold=True)
+        raise typer.Exit(1)
 
 
 @initialize_app.command("sft")
 def initialize_sft(
-    n_rows: Annotated[int, typer.Option(help="Number of rows to load")] = 10000,
+    dataset: Annotated[
+        str,
+        typer.Option(
+            "--dataset",
+            "-d",
+            help="Dataset name from registry (e.g., 'general-knowledge') or use --dataset-key for custom",
+        ),
+    ] = "general-knowledge",
+    dataset_key: Annotated[
+        str,
+        typer.Option(
+            "--dataset-key",
+            help="Custom HuggingFace dataset key",
+        ),
+    ] = None,  # type: ignore
+    subset: Annotated[
+        str, typer.Option("--subset", help="Dataset subset name")
+    ] = None,  # type: ignore
+    n_items: Annotated[
+        int,
+        typer.Option(
+            "--n-items", "-n", help="Number of items to download"
+        ),
+    ] = 10000,
+    test_size: Annotated[
+        float, typer.Option("--test-size", help="Validation split proportion")
+    ] = 0.1,
+    list_datasets: Annotated[
+        bool, typer.Option("--list", help="List available datasets and exit")
+    ] = False,
+    no_streaming: Annotated[
+        bool,
+        typer.Option(
+            "--no-streaming",
+            help="Disable streaming mode (uses more disk space but may be faster for small datasets)",
+        ),
+    ] = False,
 ):
     """
     Initialize SFT (Supervised Fine-Tuning) dataset.
 
-    This command downloads general knowledge Q&A pairs, processes them
-    into the SFT format, and saves the tokenized data for training.
-    """
-    from data_loaders.sft import create_sft_dataset
+    By default, uses streaming mode to save disk space by not caching the dataset.
 
-    typer.echo(f"Initializing SFT dataset with {n_rows} rows...")
-    create_sft_dataset(n_rows=n_rows)
-    typer.secho(
-        "SFT dataset initialized successfully!", fg=typer.colors.GREEN, bold=True
-    )
+    Examples:
+        # Use default dataset (streaming mode)
+        python main.py initialize sft --n-items 10000
+
+        # Use a custom dataset
+        python main.py initialize sft --dataset-key my/dataset --n-items 5000
+
+        # Disable streaming (cache dataset to disk)
+        python main.py initialize sft --n-items 10000 --no-streaming
+
+        # List available datasets
+        python main.py initialize sft --list
+    """
+    from data_loaders.registry import get_sft_loader, list_datasets as list_ds
+
+    if list_datasets:
+        list_ds("sft")
+        return
+
+    typer.echo(f"Initializing SFT dataset...")
+
+    try:
+        loader = get_sft_loader(
+            dataset_name=dataset,
+            n_items=n_items,
+            dataset_key=dataset_key,
+            subset=subset,
+            test_size=test_size,
+            streaming=not no_streaming,
+        )
+        loader.create_dataset(output_suffix="sft")
+
+        typer.secho(
+            "SFT dataset initialized successfully!",
+            fg=typer.colors.GREEN,
+            bold=True,
+        )
+    except ValueError as e:
+        typer.secho(f"Error: {e}", fg=typer.colors.RED, bold=True)
+        raise typer.Exit(1)
 
 
 @resume_app.command("pretraining")

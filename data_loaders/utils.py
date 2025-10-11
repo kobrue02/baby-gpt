@@ -223,3 +223,173 @@ def clear_console():
         clear_output(wait=True)
     else:
         os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001, seed=42, process_fn=None):
+    """
+    Stream dataset directly to binary files without caching.
+
+    This saves disk space by not storing intermediate data.
+
+    Args:
+        iterable_dataset: HuggingFace IterableDataset
+        n_items: Total number of items to process
+        suffix: Suffix for output files
+        test_size: Proportion for validation split
+        seed: Random seed
+        process_fn: Function to process each example (defaults to process())
+    """
+    if process_fn is None:
+        process_fn = process
+
+    data_directory = os.path.join(os.path.dirname(__file__), "../data")
+    data_directory = os.path.abspath(data_directory)
+    os.makedirs(data_directory, exist_ok=True)
+
+    dtype = np.uint16
+
+    # Determine split indices
+    n_val = max(1, int(n_items * test_size))
+    n_train = n_items - n_val
+
+    # Create random indices for train/val split
+    rng = np.random.default_rng(seed)
+    indices = np.arange(n_items)
+    rng.shuffle(indices)
+    val_indices = set(indices[:n_val].tolist())
+
+    # Open binary files for writing
+    train_file = os.path.join(data_directory, f"train_{suffix}.bin")
+    val_file = os.path.join(data_directory, f"val_{suffix}.bin")
+
+    print(f"Streaming to {train_file} and {val_file}...")
+    print(f"Train examples: {n_train}, Val examples: {n_val}")
+
+    # First pass: collect tokens to write
+    train_tokens = []
+    val_tokens = []
+
+    for idx, example in enumerate(tqdm(iterable_dataset, total=n_items, desc="Streaming and tokenizing")):
+        if idx >= n_items:
+            break
+
+        # Process the example
+        processed = process_fn(example)
+        ids = processed["ids"]
+
+        # Add to appropriate split
+        if idx in val_indices:
+            val_tokens.extend(ids)
+        else:
+            train_tokens.extend(ids)
+
+    clear_console()
+
+    # Write train file
+    print(f"Writing {len(train_tokens)} tokens to train file...")
+    train_arr = np.array(train_tokens, dtype=dtype)
+    with open(train_file, 'wb') as f:
+        train_arr.tofile(f)
+
+    # Write val file
+    print(f"Writing {len(val_tokens)} tokens to val file...")
+    val_arr = np.array(val_tokens, dtype=dtype)
+    with open(val_file, 'wb') as f:
+        val_arr.tofile(f)
+
+    print(f"Done! Train: {len(train_tokens)} tokens, Val: {len(val_tokens)} tokens")
+    return train_file, val_file
+
+
+def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, seed=42):
+    """
+    Stream SFT dataset directly to binary files without caching.
+
+    This saves disk space by not storing intermediate data.
+
+    Args:
+        iterable_dataset: HuggingFace IterableDataset
+        n_items: Total number of items to process
+        suffix: Suffix for output files
+        test_size: Proportion for validation split
+        seed: Random seed
+    """
+    data_directory = os.path.join(os.path.dirname(__file__), "../data")
+    data_directory = os.path.abspath(data_directory)
+    os.makedirs(data_directory, exist_ok=True)
+
+    dtype = np.uint16
+
+    # Determine split indices
+    n_val = max(100, int(n_items * test_size))  # At least 100 val examples
+    n_train = n_items - n_val
+
+    # Create random indices for train/val split
+    rng = np.random.default_rng(seed)
+    indices = np.arange(n_items)
+    rng.shuffle(indices)
+    val_indices = set(indices[:n_val].tolist())
+
+    # Open binary files for writing
+    train_token_file = os.path.join(data_directory, f"train_{suffix}.bin")
+    train_mask_file = os.path.join(data_directory, f"train_{suffix}_mask.bin")
+    val_token_file = os.path.join(data_directory, f"val_{suffix}.bin")
+    val_mask_file = os.path.join(data_directory, f"val_{suffix}_mask.bin")
+
+    print(f"Streaming to {train_token_file} and {val_token_file}...")
+    print(f"Train examples: {n_train}, Val examples: {n_val}")
+
+    # First pass: collect tokens to write
+    train_tokens = []
+    train_masks = []
+    val_tokens = []
+    val_masks = []
+
+    valid_count = 0
+
+    for example in tqdm(iterable_dataset, total=n_items, desc="Streaming and tokenizing"):
+        if valid_count >= n_items:
+            break
+
+        # Process the example
+        processed = process_sft({"Question": example["Question"], "Answer": example["Answer"]})
+
+        # Skip invalid examples
+        if processed is None:
+            continue
+
+        ids = processed["ids"]
+        mask = processed["mask"]
+
+        # Add to appropriate split
+        if valid_count in val_indices:
+            val_tokens.extend(ids)
+            val_masks.extend(mask)
+        else:
+            train_tokens.extend(ids)
+            train_masks.extend(mask)
+
+        valid_count += 1
+
+    clear_console()
+
+    # Write train files
+    print(f"Writing {len(train_tokens)} tokens to train files...")
+    train_token_arr = np.array(train_tokens, dtype=dtype)
+    train_mask_arr = np.array(train_masks, dtype=np.uint8)
+    with open(train_token_file, 'wb') as f:
+        train_token_arr.tofile(f)
+    with open(train_mask_file, 'wb') as f:
+        train_mask_arr.tofile(f)
+
+    # Write val files
+    print(f"Writing {len(val_tokens)} tokens to val files...")
+    val_token_arr = np.array(val_tokens, dtype=dtype)
+    val_mask_arr = np.array(val_masks, dtype=np.uint8)
+    with open(val_token_file, 'wb') as f:
+        val_token_arr.tofile(f)
+    with open(val_mask_file, 'wb') as f:
+        val_mask_arr.tofile(f)
+
+    print(f"Done! Train: {len(train_tokens)} tokens, Val: {len(val_tokens)} tokens")
+    return train_token_file, val_token_file
