@@ -104,6 +104,7 @@ class PreTrainer(Trainer):
             scaler=scaler,
             scheduler=scheduler,
             epoch=0,
+            batch_process_time=float("nan"),
             lr=lr,
             iter_num=0,
             best_val_loss=float("inf"),
@@ -447,13 +448,18 @@ class PreTrainer(Trainer):
             )
             try:
                 for batch_idx in range(batches_per_epoch):
+                    start_time = time.time()
                     self.training_step(epoch, self.training_state.iter_num, train_indices, batch_idx)
                     self.pbar.update()
                     self.pbar.set_postfix_str(
                         f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
                         f"tokens {self.training_state.observed_tokens_count:,}"
                     )
-                    self.iter_num += 1
+                    self.training_state.iter_num += 1
+                    end_time = time.time()
+                    self.training_state.batch_process_time = end_time - start_time
+                    if self.training_state.iter_num % self.config["log_interval"] == 0 and self.wandb_logger:
+                        self.wandb_logger.log(self.training_state.log_state())
 
                 # save checkpoint at end of epoch
                 if self.config["master_process"]:

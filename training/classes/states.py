@@ -20,6 +20,7 @@ class TrainingState:
         scheduler: Optional[Any] # old PyTorch version
     epoch: int
     iter_num: int
+    batch_process_time: Optional[float]
     lr: float
     best_val_loss: float
     config: dict
@@ -54,7 +55,6 @@ class TrainingState:
         lr = config.get("learning_rate", 0.0)
         current_loss = checkpoint.get("current_loss", 0.0)
 
-
         return cls(
             model=model,
             raw_model=raw_model,
@@ -63,6 +63,7 @@ class TrainingState:
             scheduler=scheduler,
             epoch=epoch,
             iter_num=iter_num,
+            batch_process_time=None,
             lr=lr,
             best_val_loss=best_val_loss,
             config=config,
@@ -90,6 +91,16 @@ class TrainingState:
         if self.scheduler is not None:
             checkpoint["scheduler"] = self.scheduler.state_dict()
         return checkpoint
+    
+    def log_state(self):
+        return {
+            "train/batch_process_time": self.batch_process_time if self.batch_process_time is not None else float("nan"),
+            "train/learning_rate": self.lr,
+            "train/iter_num": self.iter_num,
+            "train/epoch": self.epoch,
+            "train/observed_tokens": self.observed_tokens_count,
+            "train/predicted_tokens": self.predicted_tokens_count,
+        }
     
     def __dict__(self):
         return self.to_checkpoint_dict()
