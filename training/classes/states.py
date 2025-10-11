@@ -90,6 +90,9 @@ class TrainingState:
         if self.scheduler is not None:
             checkpoint["scheduler"] = self.scheduler.state_dict()
         return checkpoint
+    
+    def __dict__(self):
+        return self.to_checkpoint_dict()
 
 
 @dataclass
@@ -116,9 +119,12 @@ class EvaluationState:
             "iter_num": self.iter_num,
             "train/loss": self.train_loss,
             "val/loss": self.val_loss,
-            "mean_gpt2_perplexity": self.mean_perplexity,
-            "coherence_rate": self.coherence_rate,
-            "token_entropy": self.token_entropy,
+            "val/mean_gpt2_perplexity": self.mean_perplexity,
+            "val/coherence_rate": self.coherence_rate,
+            "val/token_entropy": self.token_entropy,
             "learning_rate": self.lr,
             "current_loss": self.current_loss,
         }
+    
+    def __dict__(self):
+        return self.log_state()

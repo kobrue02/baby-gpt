@@ -366,6 +366,7 @@ class PreTrainer(Trainer):
         if (
             iter_num % self.config["eval_interval"] == 0
             and self.config["master_process"]
+            and (iter_num > 0 or epoch > 0)
         ):
             self.eval_step(epoch, iter_num)
 
