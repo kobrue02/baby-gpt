@@ -12,13 +12,19 @@ from data_loaders.supervised import SFTLoader
 
 @dataclass
 class DatasetInfo:
-    """Information about a dataset."""
+    """
+    Information about a dataset.
+    Fields:
+    - dataset_key: HuggingFace dataset key
+    - subset: Optional subset name
+    - description: Short description of the dataset
+    """
     dataset_key: str
     subset: Optional[str] = None
     description: str = ""
 
 
-# Registry of available datasets
+# preset configurations for pretraining datasets
 PRETRAINING_DATASETS: Dict[str, DatasetInfo] = {
     "fineweb": DatasetInfo(
         dataset_key="HuggingFaceFW/fineweb",
@@ -57,7 +63,10 @@ SFT_DATASETS: Dict[str, DatasetInfo] = {
         dataset_key="MuskumPillerum/General-Knowledge",
         description="General knowledge Q&A pairs",
     ),
-    # Add more SFT datasets here as needed
+    "prime-stack-exchange": DatasetInfo(
+        dataset_key="PrimeIntellect/stackexchange-question-answering",
+        description="Stack Exchange Q&A pairs by PrimeIntellect",
+    ),
 }
 
 
@@ -137,7 +146,7 @@ def get_sft_loader(
     Returns:
         SFTLoader instance
     """
-    # If custom dataset_key provided, use it
+    # if custom dataset_key provided, use it
     if dataset_key:
         config = DatasetConfig(
             dataset_key=dataset_key,
@@ -146,7 +155,7 @@ def get_sft_loader(
             test_size=test_size,
             seed=seed,
         )
-    # Otherwise, look up in registry
+    # else it should a preset, we look up in registry
     elif dataset_name in SFT_DATASETS:
         dataset_info = SFT_DATASETS[dataset_name]
         config = DatasetConfig(
@@ -156,7 +165,7 @@ def get_sft_loader(
             test_size=test_size,
             seed=seed,
         )
-    else:
+    else: # or it is unsupported
         raise ValueError(
             f"Unknown dataset: {dataset_name}. "
             f"Available: {list(SFT_DATASETS.keys())}"
