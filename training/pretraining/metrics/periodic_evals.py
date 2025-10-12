@@ -31,7 +31,7 @@ class PeriodicEval:
             for encoding in encodings_batch:
                 try:
                     text: str = decoder(encoding.squeeze().cpu().tolist())
-                except KeyError:
+                except KeyError: # produced out-of-vocab token
                     continue
                 inputs = self.tokenizer(text, return_tensors="pt")
                 input_ids = inputs.input_ids
@@ -49,8 +49,11 @@ class PeriodicEval:
 
     def coherence_rate(self, encodings_batch: List[torch.Tensor], decode_fn: Callable) -> float:
         """% of generations ending with proper punctuation (. ! ?)"""
-        valid = sum(1 for enc in encodings_batch 
+        try:
+            valid = sum(1 for enc in encodings_batch 
                    if re.search(r'[.!?]\s*$', decode_fn(enc.squeeze().cpu().tolist()).strip()))
+        except KeyError: # produced out-of-vocab token
+            return 0.0
         return valid / len(encodings_batch)
     
     def token_entropy(self, encodings_batch: List[torch.Tensor]) -> float:
