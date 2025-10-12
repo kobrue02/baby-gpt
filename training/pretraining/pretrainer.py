@@ -384,12 +384,14 @@ class PreTrainer(Trainer):
         else: # step the optimizer and scaler
             self._step()
 
-    def get_qualitative_metrics(self) -> tuple:
+    def get_qualitative_metrics(self, verbose: bool = True) -> tuple:
         """ Generate random completions and compute the mean perplexity perceived by GPT-2. """
         # list of encodings
         generations_batch = self._generate_random_completions(
             max_new_tokens=50, num_samples=5, temperature=0.8
         )
+        if verbose:
+            [self.pbar.write(self.decode(g.squeeze().cpu().tolist())) for g in generations_batch]
         mean_pplx = self.evaluator.perplexity(generations_batch, self.decode)
         coherence = self.evaluator.coherence_rate(generations_batch, self.decode)
         token_entropy = self.evaluator.token_entropy(generations_batch)
