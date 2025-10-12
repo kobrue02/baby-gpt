@@ -5,9 +5,38 @@ Pretraining dataset loader.
 from datasets import load_dataset, Dataset, DatasetDict
 from tqdm import tqdm
 from typing import List, Callable, Optional
+from io import BytesIO
+from PyPDF2 import PdfReader
 
 from data_loaders.base import BaseDatasetLoader, DatasetConfig
-from data_loaders.utils import process, clear_console, split_dataset_in_memory, stream_to_bin
+from data_loaders.utils import process, split_dataset_in_memory
+
+import requests
+import trafilatura
+
+
+headers = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/128.0.0.0 Safari/537.36"
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    "Referer": "https://www.google.com/",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "DNT": "1",  # Do Not Track
+}
+
 
 URL_LIST = [
     "https://situational-awareness.ai/wp-content/uploads/2024/06/situationalawareness.pdf",
@@ -40,8 +69,51 @@ URL_LIST = [
     "https://dn710000.ca.archive.org/0/items/dli.pahar.3637/1990%20The%20Great%20Game--On%20Secret%20Service%20in%20High%20Asia%20by%20Hopkirk%20s.pdf", # the great game
     "https://www.rrojasdatabank.info/Wealth-Nations.pdf", # the wealth of nations
     "https://faculty.econ.ucdavis.edu/faculty/bonanno/PDF/GT_book.pdf", # game theory
+    "https://irp-cdn.multiscreensite.com/cb9165b2/files/uploaded/The%20Intelligent%20Investor%20-%20BENJAMIN%20GRAHAM.pdf", # the intelligent investor
+    "https://files.romanroadsstatic.com/materials/romans/Aeneid-RRM-etext_v1.0.pdf", # the aeneid
+    "https://icrrd.com/public/media/16-05-2021-070111The-Richest-Man-in-Babylon.pdf", # the richest man in babylon
+    "https://sites.ualberta.ca/~enoch/Readings/The_Art_Of_War.pdf", # the art of war
+    "https://antilogicalism.com/wp-content/uploads/2017/07/history-pelo-war.pdf", # the history of the peloponnesian war
+    "https://ia801406.us.archive.org/24/items/gorwell1984de/1984.pdf", # 1984
+    "http://www.daviddfriedman.com/Machinery%203rd%20Edn.pdf", # machinery of freedom
+    "http://pombo.free.fr/friedman2002.pdf", # capitalism and freedom
+    "https://dn790000.ca.archive.org/0/items/animalfarm00orwe_0/animalfarm00orwe_0.pdf", # animal farm
 ]
 
+ILYA_RECS = [
+    "https://arxiv.org/pdf/1409.2329", # rnn regularization
+    "https://www.cs.toronto.edu/~fritz/absps/colt93.pdf", # keeping neural nets simple
+    "https://arxiv.org/pdf/1506.03134", # pointer networks
+    "https://proceedings.neurips.cc/paper_files/paper/2012/file/c399862d3b9d6b76c8436e924a68c45b-Paper.pdf", # imagenet
+    "https://arxiv.org/pdf/1511.06391", # seq2seq
+    "https://arxiv.org/pdf/1811.06965", # gpipe
+    "https://arxiv.org/pdf/1512.03385", # deep residual learning
+    "https://arxiv.org/pdf/1511.07122", # context aggregation
+    "https://arxiv.org/pdf/1704.01212", # neural quantum chemistry
+    "https://arxiv.org/pdf/1706.03762", # attention is all you need
+    "https://arxiv.org/pdf/1409.0473", # neural MT
+    "https://arxiv.org/pdf/1603.05027", # identity mappings in deep residual networks
+    "https://arxiv.org/pdf/1706.01427", # relational reasoning
+    "https://arxiv.org/pdf/1611.02731", # variational lossy autoencoder
+    "https://arxiv.org/pdf/1806.01822", # relational rnns
+    "https://arxiv.org/pdf/1405.6903", # the coffee automaton
+    "https://arxiv.org/pdf/1410.5401", # neural turing machines
+    "https://arxiv.org/pdf/1512.02595", # deep speech 2
+    "https://arxiv.org/pdf/2001.08361", # scaling laws
+    "https://arxiv.org/pdf/math/0406077", # minimum description length
+    "https://www.vetta.org/documents/Machine_Super_Intelligence.pdf", # superintelligence
+    "https://www.lirmm.fr/~ashen/kolmbook-eng-scan.pdf", # kolmogorov complexity
+
+]
+
+BLOG_POSTS = [
+    "https://transformer-circuits.pub/2025/attribution-graphs/biology.html", # anthropic on llm biology
+    "https://nlp.seas.harvard.edu/annotated-transformer/", # annotated transformer
+    "https://scottaaronson.blog/?p=762", # complexodynamics
+    "https://karpathy.github.io/2015/05/21/rnn-effectiveness/", # karpathy rnn
+    "https://colah.github.io/posts/2015-08-Understanding-LSTMs/", # colah lstm
+
+]
 
 class ScrapedDataLoader(BaseDatasetLoader):
     """Loader for web-scraped datasets."""
@@ -55,13 +127,14 @@ class ScrapedDataLoader(BaseDatasetLoader):
         """
         super().__init__(config)
         self.url_list = URL_LIST
+        self.blog_posts = BLOG_POSTS
+        self.ilya_recs = ILYA_RECS
+        self.session = requests.Session()
+        self.session.headers.update(headers)
 
     def _get_content_from_pdf_url(self, url: str) -> str:
-        import requests
-        from io import BytesIO
-        from PyPDF2 import PdfReader
-
-        response = requests.get(url)
+        """ Extract text content from a PDF URL """
+        response = self.session.get(url, timeout=10)
         response.raise_for_status()
         with BytesIO(response.content) as pdf_file:
             reader = PdfReader(pdf_file)
@@ -70,9 +143,30 @@ class ScrapedDataLoader(BaseDatasetLoader):
                 text += page.extract_text() + "\n"
         return text
     
+    def _get_content_from_text_url(self, url: str) -> str:
+        """ Extract text content from a plain text URL """
+        downloaded = trafilatura.fetch_url(url)
+        text = ""
+        # Extract the main content
+        if downloaded:
+            text = trafilatura.extract(downloaded)
+        return text or ""
+    
     def _load_urls(self) -> str:
         full_text = ""
         for url in tqdm(self.url_list):
+            try:
+                text = self._get_content_from_pdf_url(url)
+                full_text += text + "\n"
+            except Exception as e:
+                tqdm.write(f"Failed to load {url}: {e}")
+        for url in tqdm(self.blog_posts):
+            try:
+                text = self._get_content_from_text_url(url)
+                full_text += text + "\n"
+            except Exception as e:
+                tqdm.write(f"Failed to load {url}: {e}")
+        for url in tqdm(self.ilya_recs):
             try:
                 text = self._get_content_from_pdf_url(url)
                 full_text += text + "\n"
