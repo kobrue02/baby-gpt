@@ -15,7 +15,7 @@ class PeriodicEval:
         self.model = GPT2LMHeadModel.from_pretrained(self.model_id)
         self.model.eval()
     
-    def perplexity(self, encodings_batch: List[torch.Tensor]) -> float:
+    def perplexity(self, encodings_batch: List[torch.Tensor], decoder: Callable) -> float:
         """
         Calculate mean perplexity across a batch of encoded sequences.
 
@@ -26,23 +26,12 @@ class PeriodicEval:
             Mean perplexity across all sequences
         """
         perplexities = []
-        vocab_size = self.model.config.vocab_size  # GPT-2 vocab size (50257)
 
         with torch.no_grad():
             for encoding in encodings_batch:
-                # Convert tensor to correct format if needed
-                if isinstance(encoding, torch.Tensor):
-                    # Remove batch dimension if present and convert to CPU
-                    input_ids = encoding.squeeze().cpu()
-                    # Add batch dimension back for model input
-                    input_ids = input_ids.unsqueeze(0)
-                else:
-                    # If it's already a list of token IDs
-                    input_ids = torch.tensor([encoding])
-
-                # Clamp token IDs to valid vocab range
-                # Replace out-of-vocab tokens with unknown token (typically 0 or vocab_size-1)
-                input_ids = torch.clamp(input_ids, 0, vocab_size - 1)
+                text: str = decoder(encoding.squeeze().cpu().tolist())
+                inputs = self.tokenizer(text, return_tensors="pt")
+                input_ids = inputs.input_ids
 
                 # GPT-2 needs both inputs and labels to compute loss
                 outputs = self.model(input_ids=input_ids, labels=input_ids)

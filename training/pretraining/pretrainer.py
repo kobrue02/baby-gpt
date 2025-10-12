@@ -347,7 +347,7 @@ class PreTrainer(Trainer):
         generations_batch = self._generate_random_completions(
             max_new_tokens=50, num_samples=5, temperature=0.8
         )
-        mean_pplx = self.evaluator.perplexity(generations_batch)
+        mean_pplx = self.evaluator.perplexity(generations_batch, self.decode)
         coherence = self.evaluator.coherence_rate(generations_batch, self.decode)
         token_entropy = self.evaluator.token_entropy(generations_batch)
         return mean_pplx, coherence, token_entropy
