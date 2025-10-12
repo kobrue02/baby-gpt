@@ -48,7 +48,7 @@ class PreTrainer(Trainer):
         )
         self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
 
-        # Calculate batches per epoch early to validate intervals
+        # calculate batches per epoch to validate intervals
         self._calculate_batches_per_epoch()
         self._validate_and_adjust_intervals()
 
@@ -59,7 +59,6 @@ class PreTrainer(Trainer):
         self._train_indices = torch.Tensor([])
         self._eval_indices = torch.Tensor([])
         self._batch_idx = 0
-        self._batches_per_epoch = 0
 
         if self.resume:  # load existing checkpoint
             self.load_checkpoint()
@@ -531,7 +530,7 @@ class PreTrainer(Trainer):
             self._create_dataloader_indices()
             self.pbar = tqdm(
                 total=self._batches_per_epoch,
-                initial=self.iter_num % self._batches_per_epoch,
+                initial=self.training_state.iter_num % self._batches_per_epoch,
                 desc=f"epoch {epoch+1}/{self.config['n_epochs']}",
             )
             
