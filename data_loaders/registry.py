@@ -76,6 +76,10 @@ SFT_DATASETS: Dict[str, DatasetInfo] = {
         dataset_key="PrimeIntellect/INTELLECT-2-only-math-filtered-2k",
         description="Mathematics Q&A pairs by PrimeIntellect",
     ),
+    "dolly": DatasetInfo(
+        dataset_key="databricks/databricks-dolly-15k",
+        description="Databricks Dolly 15k instruction-following dataset",
+    ),
 }
 
 

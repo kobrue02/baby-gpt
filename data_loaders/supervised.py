@@ -9,6 +9,7 @@ from data_loaders.base import BaseDatasetLoader, DatasetConfig
 from data_loaders.utils import process_sft, stream_to_bin_sft
 
 
+
 class SFTLoader(BaseDatasetLoader):
     """Loader for supervised fine-tuning datasets."""
 
@@ -41,30 +42,42 @@ class SFTLoader(BaseDatasetLoader):
         ds = Dataset.from_list(ds_list)
         columns_to_keep = []
         if (
-            "question" in ds.column_names and "answer" in ds.column_names
-        ) or (
             "Question" in ds.column_names and "Answer" in ds.column_names
         ):
             # Keep only Question and Answer columns (adjust for other datasets)
-            columns_to_keep = ["question", "answer"]
+            columns_to_keep = ["Question", "Answer"]
             columns_to_remove = [
-                col for col in ds.column_names if col.lower() not in columns_to_keep
+                col for col in ds.column_names if col not in columns_to_keep
             ]
+            ds = ds.remove_columns(columns_to_remove)
+            ds = ds.rename_column("Question", "instruction")
+            ds = ds.rename_column("Answer", "output")
+            # Add empty input field for consistency
+            ds = ds.map(lambda _: {"input": ""}, batched=False)
         elif ( # prime intellect stack exchange
             "prompt" in ds.column_names and "gold_standard_solution" in ds.column_names
         ):
             columns_to_keep = ["prompt", "gold_standard_solution"]
             columns_to_remove = [
-                col for col in ds.column_names if col.lower() not in columns_to_keep
+                col for col in ds.column_names if col not in columns_to_keep
             ]
-            # rename to standard names
-            ds = ds.rename_columns({
-                "prompt": "question",
-                "gold_standard_solution": "answer"
-            })
-        
-        if columns_to_remove:
             ds = ds.remove_columns(columns_to_remove)
+            # rename to standard names
+            ds = ds.rename_column("prompt", "instruction")
+            ds = ds.rename_column("gold_standard_solution", "output")
+            # Add empty input field for consistency
+            ds = ds.map(lambda _: {"input": ""}, batched=False)
+        elif (
+            "instruction" in ds.column_names and "context" in ds.column_names and "response" in ds.column_names
+        ):
+            columns_to_keep = ["instruction", "context", "response"]
+            columns_to_remove = [
+                col for col in ds.column_names if col not in columns_to_keep
+            ]
+            ds = ds.remove_columns(columns_to_remove)
+            # rename to standard names
+            ds = ds.rename_column("context", "input")
+            ds = ds.rename_column("response", "output")
 
         # create train/val split
         splits = ds.train_test_split(
@@ -79,8 +92,8 @@ class SFTLoader(BaseDatasetLoader):
         print("Filtering out invalid examples...")
 
         def is_valid(example):
-            q = example["Question"]
-            a = example["Answer"]
+            q = example["instruction"]
+            a = example["output"]
             return (
                 q is not None
                 and a is not None
@@ -105,11 +118,23 @@ class SFTLoader(BaseDatasetLoader):
         print("Tokenizing dataset with SFT format (including masks)...")
         tokenized = dataset.map(
             process_sft,
-            remove_columns=["Question", "Answer"],
+            remove_columns=["instruction", "input", "output"],
             desc="Processing SFT examples",
             batched=True,
             batch_size=1000,
             num_proc=1,
+        )
+
+        # Filter out sequences that are too short (minimum 10 tokens)
+        min_length = 10
+        print(f"Filtering out sequences shorter than {min_length} tokens...")
+
+        def has_min_length(example):
+            return example["len"] >= min_length
+
+        tokenized = tokenized.filter(has_min_length, desc="Filtering short sequences")
+        print(
+            f"After length filtering: {len(tokenized['train'])} train and {len(tokenized['val'])} val examples"
         )
 
         return tokenized

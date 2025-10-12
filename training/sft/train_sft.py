@@ -97,19 +97,33 @@ class SFTTrainer(Trainer):
         self._seen_batches.add(ix_tuple)
         return ix
 
-    def get_batch(self, split: str):
+    def get_batch(self, split: str, data_dir: str = None):
         """
         Generate a batch of data for training or validation.
         Since this is SFT, we also return a mask for the loss.
+
+        Args:
+            split: 'train' or 'val'
+            data_dir: Optional override for data directory (useful for testing)
         """
+        if data_dir is None:
+            data_dir = self.data_dir
+
         tokens = np.memmap(
-            os.path.join(self.data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r"
+            os.path.join(data_dir, f"{split}_sft.bin"), dtype=np.uint16, mode="r"
         )
         masks = np.memmap(
-            os.path.join(self.data_dir, f"{split}_sft_mask.bin"),
+            os.path.join(data_dir, f"{split}_sft_mask.bin"),
             dtype=np.uint8,
             mode="r",
         )
+
+        # Validate that tokens and masks have the same length
+        if len(tokens) != len(masks):
+            raise ValueError(
+                f"Tokens and masks length mismatch: {len(tokens)} tokens vs {len(masks)} masks. "
+                f"Dataset files may be corrupted."
+            )
 
         ix = self.find_unseen_batch(tokens)
         x = torch.stack(

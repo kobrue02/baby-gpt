@@ -26,6 +26,22 @@ num_proc = 8
 num_proc_load_dataset = num_proc
 
 
+def prompt_no_input(row):
+    return ("Below is an instruction that describes a task. "
+            "Write a response that appropriately completes the request.\n\n"
+            "### Instruction:\n{instruction}\n\n### Response:\n").format_map(row)
+
+
+def prompt_input(row):
+    return ("Below is an instruction that describes a task, paired with an input that provides further context. "
+            "Write a response that appropriately completes the request.\n\n"
+            "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:\n").format_map(row)
+
+
+def create_prompt(row):
+    return prompt_no_input(row) if row["input"] == "" else prompt_input(row)
+
+
 def clean_text(text):
     """Clean input text by removing unwanted characters, HTML tags, and extra formatting."""
     # Remove HTML tags
@@ -65,58 +81,49 @@ def process(example):
 
 def process_sft(examples):
     """
-    Take examples with 'Question' and 'Answer' fields and encode to ids using tiktoken GPT-2 BPE.
+    Take examples with 'instruction', 'input' (optional), and 'output' fields and encode to ids using tiktoken GPT-2 BPE.
     Works with batched processing to avoid serialization issues.
-    Filters out examples with None or non-string Question/Answer fields.
-    """
-    # Handle both single example and batch
-    if isinstance(examples["Question"], str):
-        # Single example
-        questions = [examples["Question"]]
-        answers = [examples["Answer"]]
-    else:
-        # Batch
-        questions = examples["Question"]
-        answers = examples["Answer"]
+    Creates masks where 0 = don't compute loss (prompt) and 1 = compute loss (response).
 
+    Returns dict with 'ids', 'mask', and 'len' for each example in the batch.
+    """
     all_ids = []
     all_masks = []
     all_lens = []
 
-    for q, a in zip(questions, answers):
-        # Skip examples with None or non-string values
-        if q is None or a is None or not isinstance(q, str) or not isinstance(a, str):
-            continue
+    # Handle both batched and single example inputs
+    if not isinstance(examples, list):
+        examples = [examples]
 
-        # Skip examples that become empty after cleaning
-        q_clean = clean_text(q)
-        a_clean = clean_text(a)
-        if not q_clean or not a_clean:
-            continue
+    for example in examples:
+        # Create the prompt (instruction + optional input)
+        prompt = create_prompt(example)
 
-        q_ids = enc.encode_ordinary(q_clean + "\n")  # include the separator
-        a_ids = enc.encode_ordinary(a_clean)
-        ids = q_ids + a_ids
-        ids.append(enc.eot_token)
+        # Get the response
+        response = example.get('output', example.get('answer', ''))
+        EOS_TOKEN = "</s>"
+        full_response = response + EOS_TOKEN
 
-        # 1 for assistant tokens, 0 for user tokens
-        mask = [0] * len(q_ids) + [1] * (
-            len(a_ids) + 1
-        )  # +1 for eot if you want loss on eot
+        # Encode prompt and response separately
+        prompt_ids = enc.encode_ordinary(prompt)
+        response_ids = enc.encode_ordinary(full_response)
 
-        all_ids.append(ids)
+        # Concatenate all ids
+        all_token_ids = prompt_ids + response_ids
+
+        # Create mask: 0 for prompt tokens (no loss), 1 for response tokens (compute loss)
+        mask = [0] * len(prompt_ids) + [1] * len(response_ids)
+
+        all_ids.append(all_token_ids)
         all_masks.append(mask)
-        all_lens.append(len(ids))
+        all_lens.append(len(all_token_ids))
 
-    # Return in the format expected by datasets
-    if isinstance(examples["Question"], str):
-        # Single example - return single values (or None if filtered out)
-        if len(all_ids) == 0:
-            return None
-        return {"ids": all_ids[0], "mask": all_masks[0], "len": all_lens[0]}
-    else:
-        # Batch - return lists
-        return {"ids": all_ids, "mask": all_masks, "len": all_lens}
+    return {
+        "ids": all_ids,
+        "mask": all_masks,
+        "len": all_lens
+    }
+
 
 
 def memmap(split, dset, dtype, suffix=""):
@@ -369,15 +376,55 @@ def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, se
         if valid_count >= n_items:
             break
 
-        # Process the example
-        processed = process_sft({"Question": example["Question"], "Answer": example["Answer"]})
-
-        # Skip invalid examples
-        if processed is None:
+        # Normalize field names - handle different dataset schemas
+        # Expected output: instruction, input (optional), output
+        if "instruction" in example and "output" in example:
+            normalized_example = {
+                "instruction": example["instruction"],
+                "input": example.get("input", example.get("context", "")),
+                "output": example["output"]
+            }
+        elif "Question" in example and "Answer" in example:
+            normalized_example = {
+                "instruction": example["Question"],
+                "input": "",
+                "output": example["Answer"]
+            }
+        elif "prompt" in example and "gold_standard_solution" in example:
+            normalized_example = {
+                "instruction": example["prompt"],
+                "input": "",
+                "output": example["gold_standard_solution"]
+            }
+        elif "instruction" in example and "response" in example:
+            normalized_example = {
+                "instruction": example["instruction"],
+                "input": example.get("context", ""),
+                "output": example["response"]
+            }
+        else:
+            # Skip examples that don't match expected format
             continue
 
-        ids = processed["ids"]
-        mask = processed["mask"]
+        # Validate the example
+        if (
+            not normalized_example["instruction"]
+            or not normalized_example["output"]
+            or not isinstance(normalized_example["instruction"], str)
+            or not isinstance(normalized_example["output"], str)
+        ):
+            continue
+
+        # Process the example (pass as single example, not batch)
+        processed = process_sft(normalized_example)
+
+        # Extract from batch output (process_sft returns lists)
+        ids = processed["ids"][0]
+        mask = processed["mask"][0]
+
+        # Skip sequences that are too short (minimum 10 tokens)
+        if len(ids) < 10:
+            continue
 
         # Add to appropriate split
         if valid_count in val_indices:

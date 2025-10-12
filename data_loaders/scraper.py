@@ -102,7 +102,10 @@ URL_LIST = [
     "https://staibabussalamsula.ac.id/wp-content/uploads/2023/11/yuval_noah_harari-sapiens_a_brief_histor.pdf", # sapiens
     "https://ross.aoe.vt.edu/books/Ross_3BodyProblem_Book_2022.pdf", # three body problem
     "https://images.pcmac.org/SiSFiles/Schools/AL/LeedsCity/LeedsMiddle/Uploads/DocumentsCategories/Documents/Enders_Game_Full_Book.pdf", # ender's game
-
+    "https://yetemonamonew.wordpress.com/wp-content/uploads/2012/11/physics-of-the-impossible-by-michael-kaku1.pdf", # physics of the impossible
+    "https://www.sustainable.soltechdesigns.com/Energy-and-Civilization-Vaclav-Smil.pdf", # energy and civilization
+    "https://files.commons.gc.cuny.edu/wp-content/blogs.dir/13036/files/2020/09/3.Eula-Biss-On-Immunity.pdf", # on immunity
+    "https://cssplatformbytha.com/wp-content/uploads/2024/10/World-Order-by-Henry-Kissinger.pdf", # world order
 ]
 
 ILYA_RECS = [
@@ -142,6 +145,12 @@ BLOG_POSTS = [
 
 ]
 
+MATH_BOOKS = [
+    "https://plbailey79.github.io/portal/harc/z17/RCmplx01_Ross.pdf", # calculus & analysis
+    "https://kdl.kogistate.gov.ng/wp-content/uploads/2023/08/Hugh-D.-Young-Roger-A.-Freedman-A.-Lewis-Ford-University-Physics-with-Modern-Physics-with-MasteringPhysics%C2%AE-13th-Edition-Addison-Wesley-2011.pdf", # university physics
+    "https://linear.axler.net/LADR4e.pdf", # linear algebra done right
+]
+
 class ScrapedDataLoader(BaseDatasetLoader):
     """Loader for web-scraped datasets."""
 
@@ -156,6 +165,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
         self.url_list = URL_LIST
         self.blog_posts = BLOG_POSTS
         self.ilya_recs = ILYA_RECS
+        self.math_books = MATH_BOOKS
         self.session = requests.Session()
         self.session.headers.update(headers)
 
@@ -194,6 +204,12 @@ class ScrapedDataLoader(BaseDatasetLoader):
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
         for url in tqdm(self.ilya_recs):
+            try:
+                text = self._get_content_from_pdf_url(url)
+                full_text += text + "\n"
+            except Exception as e:
+                tqdm.write(f"Failed to load {url}: {e}")
+        for url in tqdm(self.math_books):
             try:
                 text = self._get_content_from_pdf_url(url)
                 full_text += text + "\n"
