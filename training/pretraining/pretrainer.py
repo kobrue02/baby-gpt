@@ -17,6 +17,7 @@ warnings.filterwarnings(
 )
 
 from tqdm import tqdm
+from typing import Optional
 from training.classes.trainer import Trainer
 from training.classes.states import TrainingState, EvaluationState
 from training.classes.transformer import Transformer
@@ -50,6 +51,11 @@ class PreTrainer(Trainer):
         # init training state, will be overwritten if resuming from checkpoint
         self.training_state = self.init_training_state()
         self.eval_state = self.init_eval_state()
+
+        self._train_indices = torch.Tensor([])
+        self._eval_indices = torch.Tensor([])
+        self._batch_idx = 0
+        self._batches_per_epoch = 0
 
         if self.resume:  # load existing checkpoint
             self.load_checkpoint()
@@ -131,8 +137,13 @@ class PreTrainer(Trainer):
             )
         return len(data)
 
-    def _create_dataloader_indices(self, data_len: int):
+    def _create_dataloader_indices(self, data_len: Optional[int] = None, split: str = "train"):
         """Create shuffled indices for epoch-based training."""
+        if data_len is None or split == "train":
+            data_len = self.train_data_len
+        else:
+            data_len = self._get_dataset_length(split)
+        
         # number of sequences we can extract
         num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
 
@@ -140,7 +151,17 @@ class PreTrainer(Trainer):
         indices = torch.arange(0, num_sequences * self.config["block_size"], self.config["block_size"])
 
         # shuffle indices for a given epoch
-        return indices[torch.randperm(len(indices))]
+        indices = indices[torch.randperm(len(indices))]
+        
+        if split == "val":
+            self._eval_indices = indices
+            return
+
+        else:
+            self._train_indices = indices
+            self._batches_per_epoch = (
+                    len(self._train_indices) // self.config["batch_size"]
+                ) // self.config["gradient_accumulation_steps"]
 
 
     def get_batch(self, split: str, indices: torch.Tensor, batch_idx: int):
@@ -233,18 +254,18 @@ class PreTrainer(Trainer):
             losses = torch.zeros(self.config["eval_iters"])
             # Create temporary indices for evaluation
             data_len = self._get_dataset_length(split)
-            eval_indices = self._create_dataloader_indices(data_len)
+            self._create_dataloader_indices(data_len=data_len, split=split)
             for k in range(self.config["eval_iters"]):
-                if k >= len(eval_indices) // self.config["batch_size"]:
+                if k >= len(self._eval_indices) // self.config["batch_size"]:
                     break  # Don't go past the dataset
-                self.X, self.Y = self.get_batch(split, eval_indices, k)
+                self.X, self.Y = self.get_batch(split, self._eval_indices, k)
                 with self.ctx:
                     _, loss = self.model(self.X, self.Y)
                 losses[k] = loss.item()
             out[split] = losses.mean()
         return out
     
-    def _perform_gradient_accumulation_steps(self, train_indices, base_batch_idx):
+    def _perform_gradient_accumulation_steps(self):
         """
         Perform gradient accumulation over multiple micro-steps.
 
@@ -260,15 +281,15 @@ class PreTrainer(Trainer):
         successful_steps = 0
 
         num_accumulation_steps = self.config["gradient_accumulation_steps"]
-        max_batches_available = len(train_indices) // self.config["batch_size"]
+        max_batches_available = len(self._train_indices) // self.config["batch_size"]
 
         for micro_step in range(num_accumulation_steps):
             # each base_batch_idx covers num_accumulation_steps micro-batches
-            actual_batch_idx = base_batch_idx * num_accumulation_steps + micro_step
-            if actual_batch_idx >= max_batches_available:
+            micro_batch_idx = self._batch_idx * num_accumulation_steps + micro_step
+            if micro_batch_idx >= max_batches_available:
                 break # stop if we've exhausted the dataset
 
-            self.X, self.Y = self.get_batch("train", train_indices, actual_batch_idx)
+            self.X, self.Y = self.get_batch("train", self._train_indices, micro_batch_idx)
 
             with self.ctx:
                 _, loss = self.model(self.X, self.Y)
@@ -280,7 +301,7 @@ class PreTrainer(Trainer):
 
             if not torch.isfinite(loss):
                 self.pbar.set_postfix_str(
-                    f"non-finite loss: {loss.item()}, skipping batch {actual_batch_idx}"
+                    f"non-finite loss: {loss.item()}, skipping batch {micro_batch_idx}"
                 )
                 continue
 
@@ -292,28 +313,23 @@ class PreTrainer(Trainer):
 
         # undo the scaling and get the average loss over successful steps
         if successful_steps > 0:
-            self.current_loss = accumulated_loss * num_accumulation_steps / successful_steps
+            self.current_loss = accumulated_loss / successful_steps
 
         return performed_backward
 
-    def forward_backward(self, train_indices, batch_idx):
+    def forward_backward(self):
         """ Perform the forward and backward pass, with gradient accumulation if needed. """
         # forward backward update, with gradient accumulation
-        performed_backward = self._perform_gradient_accumulation_steps(train_indices, batch_idx)
+        assert self.scaler is not None, "Scaler should be initialized"
+        performed_backward = self._perform_gradient_accumulation_steps()
         # skip optimizer step if no backward passes were performed
         if not performed_backward:
             self.optimizer.zero_grad(set_to_none=True)
+            self.scaler.update()
             return
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
-            assert self.scaler is not None, "Scaler should be initialized"
-            try:
-                self.scaler.unscale_(self.optimizer)
-            except RuntimeError as e:
-                self.pbar.set_postfix_str(f"skipping batch due unscale_() error")
-                self.optimizer.zero_grad(set_to_none=True)
-                return
-            
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
@@ -334,7 +350,7 @@ class PreTrainer(Trainer):
         token_entropy = self.evaluator.token_entropy(generations_batch)
         return mean_pplx, coherence, token_entropy
 
-    def eval_step(self, epoch, iter_num=0):
+    def eval_step(self):
         """Evaluate the model and log results. Save a checkpoint if the model is the best seen so far."""
         self.model.eval()
         losses = self.estimate_loss()
@@ -342,8 +358,8 @@ class PreTrainer(Trainer):
 
         # Update evaluation state
         self.eval_state.update(
-            epoch=epoch,
-            iter_num=iter_num,
+            epoch=self.training_state.epoch,
+            iter_num=self.training_state.iter_num,
             train_loss=losses["train"],
             val_loss=losses["val"],
             mean_perplexity=mean_pplx,
@@ -359,12 +375,12 @@ class PreTrainer(Trainer):
         if losses["val"] < self.training_state.best_val_loss or self.config["always_save_checkpoint"]:
             self.training_state.best_val_loss = losses["val"]
             self.eval_state.best_val_loss = losses["val"]
-            if iter_num > 0:
+            if self.eval_state.iter_num > 0:
                 self.save_checkpoint()
 
         self.training_state.model.train()
 
-    def training_step(self, train_indices, batch_idx):
+    def training_step(self):
         """Perform a single training step."""
 
         # determine and set the learning rate for this iteration
@@ -375,7 +391,7 @@ class PreTrainer(Trainer):
             return
 
         # else, perform the forward/backward pass and clear memory
-        self.forward_backward(train_indices, batch_idx)
+        self.forward_backward()
 
         if self.device_type == "mps":
             cleanup_mps_memory()
@@ -430,61 +446,57 @@ class PreTrainer(Trainer):
                     )
                     completions.append(completion)
         return completions
+    
+    def epoch(self):
+        for batch_idx in range(self._batches_per_epoch):
+            self._batch_idx = batch_idx
+            if (
+                self.training_state.iter_num % self.config["eval_interval"] == 0
+                and self.config["master_process"]
+                and (self.training_state.iter_num > 0 or self.training_state.epoch > 0)
+            ):
+                self.eval_step()
+            
+            start_time = time.time()
+            self.training_step()
+            end_time = time.time()
+
+            self.pbar.update()
+            self.pbar.set_postfix_str(
+                f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
+                f"tokens {self.training_state.observed_tokens_count:,}"
+            )
+            self.training_state.iter_num += 1
+            self.training_state.batch_process_time = end_time - start_time
+            
+            if (
+                self.training_state.iter_num % self.config["log_interval"] == 0 
+                and self.wandb_logger
+            ):
+                self.wandb_logger.log(self.training_state.log_state())
+                self.wandb_logger.log(
+                    self.training_state.model.time_consumption.log_state(), step=self.training_state.iter_num
+                )
+                self.training_state.model.time_consumption.reset()
 
     def train(self):
         """
-        Train the model using epoch-based training.
+        Train the model.
         """
         assert isinstance(self.training_state, TrainingState), "Training state not initialized"
         assert isinstance(self.training_state.model, Transformer), "Model not initialized"
         assert isinstance(self.eval_state, EvaluationState), "Eval state not initialized"
 
         for epoch in range(self.training_state.epoch, self.config["n_epochs"]):
-            train_indices = self._create_dataloader_indices(self.train_data_len)
-            batches_per_epoch = (
-                len(train_indices) // self.config["batch_size"]
-            ) // self.config["gradient_accumulation_steps"]
+            self._create_dataloader_indices()
             self.pbar = tqdm(
-                total=batches_per_epoch,
-                initial=self.iter_num % batches_per_epoch,
+                total=self._batches_per_epoch,
+                initial=self.iter_num % self._batches_per_epoch,
                 desc=f"epoch {epoch+1}/{self.config['n_epochs']}",
             )
             try:
-                for batch_idx in range(batches_per_epoch):
-                    if (
-                        self.training_state.iter_num % self.config["eval_interval"] == 0
-                        and self.config["master_process"]
-                        and (self.training_state.iter_num > 0 or self.training_state.epoch > 0)
-                    ):
-                        self.eval_step(self.training_state.epoch, self.training_state.iter_num)
-                    
-                    start_time = time.time()
-                    self.training_step(train_indices, batch_idx)
-                    end_time = time.time()
-
-                    self.pbar.update()
-                    self.pbar.set_postfix_str(
-                        f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
-                        f"tokens {self.training_state.observed_tokens_count:,}"
-                    )
-                    self.training_state.iter_num += 1
-                    self.training_state.batch_process_time = end_time - start_time
-                    
-                    if (
-                        self.training_state.iter_num % self.config["log_interval"] == 0 
-                        and self.wandb_logger
-                    ):
-                        self.wandb_logger.log(self.training_state.log_state())
-                        self.wandb_logger.log(
-                            self.training_state.model.time_consumption.log_state(), step=self.training_state.iter_num
-                        )
-                        self.training_state.model.time_consumption.reset()
-
-                # save checkpoint at end of epoch
-                if self.config["master_process"]:
-                    self.training_state.epoch = epoch + 1
-                    self.save_checkpoint()
-
+                self.epoch()
+            
             except KeyboardInterrupt:
                 self.save_checkpoint()
                 self.pbar.close()
@@ -496,6 +508,11 @@ class PreTrainer(Trainer):
                 if not continue_training:
                     print("Exiting from training due to error.")
                     break
+            
+            # save checkpoint at end of epoch
+            if self.config["master_process"]:
+                self.training_state.epoch = epoch + 1
+                self.save_checkpoint()
 
         self.pbar.close()
         print(f"exiting training - epoch {epoch}, iter {self.iter_num}")
