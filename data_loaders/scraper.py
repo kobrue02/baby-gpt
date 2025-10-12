@@ -35,7 +35,11 @@ URL_LIST = [
     "https://wiki.chadnet.org/files/the-anglo-american-establishment.pdf", # the anglo american establishment
     "https://home-wordpress.deeplearning.ai/wp-content/uploads/2022/03/andrew-ng-machine-learning-yearning.pdf", # machine learning yearning
     "https://dn721903.ca.archive.org/0/items/american-psycho-BEE/American%20Psycho%20%28Bret%20Easton%20Ellis%29%20%28z-lib.org%29.pdf", # american psycho
-    
+    "https://ia801208.us.archive.org/24/items/TheFabricOfReality/The_Fabric_of_Reality.pdf", # the fabric of reality
+    "https://assets.stripeassets.com/fzn2n1nzq965/5j0dFbeGgGbohTE3a2jrVA/ebd35e791ca5fa926c6a0b076860c71c/ZINE-Scaling_Era-singles.pdf", # the scaling era
+    "https://dn710000.ca.archive.org/0/items/dli.pahar.3637/1990%20The%20Great%20Game--On%20Secret%20Service%20in%20High%20Asia%20by%20Hopkirk%20s.pdf", # the great game
+    "https://www.rrojasdatabank.info/Wealth-Nations.pdf", # the wealth of nations
+    "https://faculty.econ.ucdavis.edu/faculty/bonanno/PDF/GT_book.pdf", # game theory
 ]
 
 
