@@ -255,10 +255,12 @@ class PreTrainer(Trainer):
             # Create temporary indices for evaluation
             data_len = self._get_dataset_length(split)
             self._create_dataloader_indices(data_len=data_len, split=split)
+            # Use the correct indices based on split
+            indices = self._eval_indices if split == "val" else self._train_indices
             for k in range(self.config["eval_iters"]):
-                if k >= len(self._eval_indices) // self.config["batch_size"]:
+                if k >= len(indices) // self.config["batch_size"]:
                     break  # Don't go past the dataset
-                self.X, self.Y = self.get_batch(split, self._eval_indices, k)
+                self.X, self.Y = self.get_batch(split, indices, k)
                 with self.ctx:
                     _, loss = self.model(self.X, self.Y)
                 losses[k] = loss.item()
