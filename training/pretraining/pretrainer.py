@@ -47,7 +47,11 @@ class PreTrainer(Trainer):
             self.config["batch_size"] * self.config["block_size"]
         )
         self.total_steps = self.steps_per_epoch * self.config["n_epochs"]
-        
+
+        # Calculate batches per epoch early to validate intervals
+        self._calculate_batches_per_epoch()
+        self._validate_and_adjust_intervals()
+
         # init training state, will be overwritten if resuming from checkpoint
         self.training_state = self.init_training_state()
         self.eval_state = self.init_eval_state()
@@ -137,13 +141,48 @@ class PreTrainer(Trainer):
             )
         return len(data)
 
+    def _calculate_batches_per_epoch(self):
+        """Calculate batches per epoch from training data."""
+        num_sequences = (self.train_data_len - self.config["block_size"]) // self.config["block_size"]
+        self._batches_per_epoch = (
+            num_sequences // self.config["batch_size"]
+        ) // self.config["gradient_accumulation_steps"]
+
+    def _validate_and_adjust_intervals(self):
+        """Validate and adjust eval/log intervals for small datasets."""
+        if self._batches_per_epoch <= 0:
+            raise ValueError(
+                f"Dataset too small: only {self._batches_per_epoch} batches per epoch. "
+                f"Reduce batch_size, block_size, or gradient_accumulation_steps."
+            )
+
+        # Adjust eval_interval if it's larger than batches per epoch
+        if self._batches_per_epoch < self.config["eval_interval"]:
+            old_eval = self.config["eval_interval"]
+            # Set to half of batches per epoch, but at least 1
+            self.config["eval_interval"] = max(1, self._batches_per_epoch // 2)
+            print(
+                f"Warning: eval_interval ({old_eval}) > batches_per_epoch ({self._batches_per_epoch}). "
+                f"Adjusting eval_interval to {self.config['eval_interval']}"
+            )
+
+        # Adjust log_interval if it's larger than batches per epoch
+        if self._batches_per_epoch < self.config["log_interval"]:
+            old_log = self.config["log_interval"]
+            # Set to quarter of batches per epoch, but at least 1
+            self.config["log_interval"] = max(1, self._batches_per_epoch // 4)
+            print(
+                f"Warning: log_interval ({old_log}) > batches_per_epoch ({self._batches_per_epoch}). "
+                f"Adjusting log_interval to {self.config['log_interval']}"
+            )
+
     def _create_dataloader_indices(self, data_len: Optional[int] = None, split: str = "train"):
         """Create shuffled indices for epoch-based training."""
         if data_len is None or split == "train":
             data_len = self.train_data_len
         else:
             data_len = self._get_dataset_length(split)
-        
+
         # number of sequences we can extract
         num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
 
@@ -152,16 +191,14 @@ class PreTrainer(Trainer):
 
         # shuffle indices for a given epoch
         indices = indices[torch.randperm(len(indices))]
-        
+
         if split == "val":
             self._eval_indices = indices
             return
 
         else:
             self._train_indices = indices
-            self._batches_per_epoch = (
-                    len(self._train_indices) // self.config["batch_size"]
-                ) // self.config["gradient_accumulation_steps"]
+            # Note: _batches_per_epoch already calculated in __init__
 
 
     def get_batch(self, split: str, indices: torch.Tensor, batch_idx: int):

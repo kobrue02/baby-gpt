@@ -22,6 +22,19 @@ URL_LIST = [
     "https://ia800306.us.archive.org/31/items/durant-will-the-lessons-of-history_202012/Durant%20Will%20-%20The%20Lessons%20of%20History.pdf", # the lessons of history
     "https://irp.cdn-website.com/6b820530/files/uploaded/Ayn%20Rand-%20Atlas%20Shrugged.pdf", # atlas shrugged
     "https://www.readdiary.com/wp-content/uploads/2022/05/Steve-Jobs-PDFDrive-1.pdf", # steve jobs
+    "https://www.cia.gov/library/abbottabad-compound/36/36669B7894E857AC4F3445EA646BFFE1_Zbigniew_Brzezinski_-_The_Grand_ChessBoard.doc.pdf", # the grand chessboard
+    "https://mo.tnu.tj/wp-content/uploads/2020/11/strategic_vision__america_and_the_crisis_of_global_power.pdf", # strategic vision
+    "https://web.cs.ucdavis.edu/~rogaway/classes/188/materials/Industrial%20Society%20and%20Its%20Future.pdf", # kaczynski manifesto
+    "https://wiki.chadnet.org/files/generative-energy-restoring-the-wholeness-of-life.pdf", # ray peat generative energy
+    "https://wiki.chadnet.org/files/thus-spake-zarathustra.pdf", # thus spoke zarathustra
+    "https://wiki.chadnet.org/files/through-the-brazilian-wilderness.pdf", # through the brazilian wilderness
+    "https://wiki.chadnet.org/files/the-complete-book-of-self-sufficiency.pdf", # the complete book of self-sufficiency
+    "https://wiki.chadnet.org/anton-johanson-the-christian-seer-from-the-norwegian-finnmark.pdf", # the christian seer
+    "https://wiki.chadnet.org/files/the-foundations-of-arithmetic-a-logico-mathematical-enquiry-into-the-concept-of-number-by-gottlob-frege.pdf", # the foundations of arithmetic
+    "https://wiki.chadnet.org/files/the-milner-fabian-conspiracy.pdf", # the milner fabian conspiracy
+    "https://wiki.chadnet.org/files/the-anglo-american-establishment.pdf", # the anglo american establishment
+    "https://home-wordpress.deeplearning.ai/wp-content/uploads/2022/03/andrew-ng-machine-learning-yearning.pdf", # machine learning yearning
+    
 ]
 
 
