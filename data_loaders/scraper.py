@@ -68,7 +68,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
         chunks = [text for text in full_text.split('\n\n') if text.strip()]
         ds = Dataset.from_dict({'text': chunks})
 
-        clear_console()  # Clear tqdm bars
+        # clear_console()  # Clear tqdm bars
 
         # Create train/val split
         splits = split_dataset_in_memory(
