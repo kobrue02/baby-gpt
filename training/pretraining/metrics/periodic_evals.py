@@ -29,7 +29,10 @@ class PeriodicEval:
 
         with torch.no_grad():
             for encoding in encodings_batch:
-                text: str = decoder(encoding.squeeze().cpu().tolist())
+                try:
+                    text: str = decoder(encoding.squeeze().cpu().tolist())
+                except KeyError:
+                    continue
                 inputs = self.tokenizer(text, return_tensors="pt")
                 input_ids = inputs.input_ids
 
@@ -39,6 +42,9 @@ class PeriodicEval:
                 perplexity = math.exp(loss.item())
                 perplexities.append(perplexity)
 
+        if len(perplexities) == 0:
+            return float('inf')
+        
         return sum(perplexities) / len(perplexities)
 
     def coherence_rate(self, encodings_batch: List[torch.Tensor], decode_fn: Callable) -> float:
