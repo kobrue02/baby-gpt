@@ -72,6 +72,10 @@ SFT_DATASETS: Dict[str, DatasetInfo] = {
         dataset_key="PrimeIntellect/stackexchange-question-answering",
         description="Stack Exchange Q&A pairs by PrimeIntellect",
     ),
+    "prime-math": DatasetInfo(
+        dataset_key="PrimeIntellect/INTELLECT-2-only-math-filtered-2k",
+        description="Mathematics Q&A pairs by PrimeIntellect",
+    ),
 }
 
 

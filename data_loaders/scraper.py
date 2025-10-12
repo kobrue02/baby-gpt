@@ -78,6 +78,31 @@ URL_LIST = [
     "http://www.daviddfriedman.com/Machinery%203rd%20Edn.pdf", # machinery of freedom
     "http://pombo.free.fr/friedman2002.pdf", # capitalism and freedom
     "https://dn790000.ca.archive.org/0/items/animalfarm00orwe_0/animalfarm00orwe_0.pdf", # animal farm
+    "https://www.lopp.net/pdf/The%20Sovereign%20Individual.pdf", # the sovereign individual
+    "https://ia903107.us.archive.org/35/items/j-r-r-tolkien-lord-of-the-rings-01-the-fellowship-of-the-ring-retail-pdf/j-r-r-tolkien-lord-of-the-rings-01-the-fellowship-of-the-ring-retail-pdf.pdf", # lotr fellowship
+    "https://wrenchinthegears.com/wp-content/uploads/2023/03/The-Diamond-Age-Novel.pdf", # the diamond age
+    "https://identityhunters.org/wp-content/uploads/2017/07/niccolo-machiavelli-discourses-of-livy.pdf", # discourses on livy
+    "https://antilogicalism.com/wp-content/uploads/2018/04/reasonableness-christianity.pdf", # reasonableness of christianity
+    "https://ia601305.us.archive.org/29/items/cu31924007365467/cu31924007365467.pdf", # the great illusion
+    "https://www.thomasmorestudies.org/wp-content/uploads/2020/09/Bacon-New-Atlantis-2020-Edition-7-6-2020.pdf", # new atlantis
+    "https://rickbulow.com/Library/Books/Non-Fiction/Political/IntellectualsAndSocietyByThomasSowell.pdf", # intellectuals and society
+    "https://theworthyhouse.com/wp-content/uploads/2020/03/Decadent-Society-Douthat-PDF.pdf", # decadent society
+    "https://ia601503.us.archive.org/23/items/AsimovTheFoundation/Asimov_the_foundation.pdf", # asimov foundation
+    "https://myaccount.inspiruseducation.com/wp-content/uploads/2022/02/The-Hitchhikers-Guide-to-the-Galaxy-Douglas-Adams.pdf", # hitchhiker's guide
+    "https://dn790001.ca.archive.org/0/items/autobiobenfran00miffrich/autobiobenfran00miffrich.pdf", # autobiography of ben franklin
+    "https://www.mondotheque.be/wiki/images/c/cc/Dave_Eggers_The_Circle.pdf", # the circle
+    "https://books-library.website/files/books-library.online-01120755Hy9M4.pdf", # stranger in a strange land
+    "https://ia902904.us.archive.org/26/items/ErnstJngerTheStormOfSteel/Ernst_J%C3%BCnger_The_Storm_of_Steel.pdf", # the storm of steel
+    "https://ntrs.nasa.gov/api/citations/19710019929/downloads/19710019929.pdf", # rocket engines
+    "https://virtualmmx.ddns.net/gbooks/OurFinalInvention.pdf", # our final invention
+    "https://www.friendsofsabbath.org/Further_Research/e-books/Durant%20story%20of%20civilization.pdf", # the story of civilization
+    "https://library.sciencemadness.org/library/books/ignition.pdf", # ignition
+    "https://uberty.org/wp-content/uploads/2015/12/herman-melville-moby-dick.pdf", # moby dick
+    "https://folger-main-site-assets.s3.amazonaws.com/uploads/2022/11/king-lear_PDF_FolgerShakespeare.pdf", # king leare
+    "https://staibabussalamsula.ac.id/wp-content/uploads/2023/11/yuval_noah_harari-sapiens_a_brief_histor.pdf", # sapiens
+    "https://ross.aoe.vt.edu/books/Ross_3BodyProblem_Book_2022.pdf", # three body problem
+    "https://images.pcmac.org/SiSFiles/Schools/AL/LeedsCity/LeedsMiddle/Uploads/DocumentsCategories/Documents/Enders_Game_Full_Book.pdf", # ender's game
+
 ]
 
 ILYA_RECS = [
@@ -112,6 +137,8 @@ BLOG_POSTS = [
     "https://scottaaronson.blog/?p=762", # complexodynamics
     "https://karpathy.github.io/2015/05/21/rnn-effectiveness/", # karpathy rnn
     "https://colah.github.io/posts/2015-08-Understanding-LSTMs/", # colah lstm
+    "https://www.gutenberg.org/files/4061/4061-h/4061-h.htm", # fifteen battles
+    "https://terebess.hu/zen/mesterek/ZMBM-Lectures.html", # zen mind, beginner's mind
 
 ]
 
