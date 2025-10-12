@@ -452,6 +452,8 @@ class PreTrainer(Trainer):
     def epoch(self):
         for batch_idx in range(self._batches_per_epoch):
             self._batch_idx = batch_idx
+            self.training_state.iter_num += 1
+            # evaluate periodically
             if (
                 self.training_state.iter_num % self.config["eval_interval"] == 0
                 and self.config["master_process"]
@@ -468,7 +470,6 @@ class PreTrainer(Trainer):
                 f"lr {self.training_state.lr:.2e}, loss {self.current_loss:.4f}, "
                 f"tokens {self.training_state.observed_tokens_count:,}"
             )
-            self.training_state.iter_num += 1
             self.training_state.batch_process_time = end_time - start_time
             
             if (
@@ -496,6 +497,7 @@ class PreTrainer(Trainer):
                 initial=self.iter_num % self._batches_per_epoch,
                 desc=f"epoch {epoch+1}/{self.config['n_epochs']}",
             )
+            
             try:
                 self.epoch()
             
@@ -515,6 +517,8 @@ class PreTrainer(Trainer):
             if self.config["master_process"]:
                 self.training_state.epoch = epoch + 1
                 self.save_checkpoint()
+            
+            self.pbar.clear()
 
         self.pbar.close()
-        print(f"exiting training - epoch {epoch}, iter {self.iter_num}")
+        print(f"exiting training - epoch {epoch + 1}, iter {self.iter_num}")
