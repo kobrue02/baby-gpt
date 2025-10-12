@@ -125,6 +125,7 @@ def get_pretraining_loader(
         )
 
     if config.dataset_key == "scraped-dataset":
+        config.test_size = 0.1  # override for scraped dataset
         return ScrapedDataLoader(config)
     else:
         return PretrainingLoader(config, streaming=streaming)

@@ -185,6 +185,13 @@ class PreTrainer(Trainer):
         # number of sequences we can extract
         num_sequences = (data_len - self.config["block_size"]) // self.config["block_size"]
 
+        # handle case where dataset is too small
+        if num_sequences <= 0:
+            raise ValueError(
+                f"Dataset ({split}) too small: {data_len} tokens, but need at least "
+                f"{2 * self.config['block_size']} tokens (2 * block_size) to create sequences."
+            )
+
         # sequential starting indices
         indices = torch.arange(0, num_sequences * self.config["block_size"], self.config["block_size"])
 

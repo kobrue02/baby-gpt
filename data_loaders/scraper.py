@@ -34,6 +34,7 @@ URL_LIST = [
     "https://wiki.chadnet.org/files/the-milner-fabian-conspiracy.pdf", # the milner fabian conspiracy
     "https://wiki.chadnet.org/files/the-anglo-american-establishment.pdf", # the anglo american establishment
     "https://home-wordpress.deeplearning.ai/wp-content/uploads/2022/03/andrew-ng-machine-learning-yearning.pdf", # machine learning yearning
+    "https://dn721903.ca.archive.org/0/items/american-psycho-BEE/American%20Psycho%20%28Bret%20Easton%20Ellis%29%20%28z-lib.org%29.pdf", # american psycho
     
 ]
 
