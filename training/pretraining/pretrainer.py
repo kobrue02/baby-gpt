@@ -307,7 +307,13 @@ class PreTrainer(Trainer):
         # clip the gradient
         if self.config["grad_clip"] != 0.0:
             assert self.scaler is not None, "Scaler should be initialized"
-            self.scaler.unscale_(self.optimizer)
+            try:
+                self.scaler.unscale_(self.optimizer)
+            except RuntimeError as e:
+                self.pbar.set_postfix_str(f"skipping batch due unscale_() error")
+                self.optimizer.zero_grad(set_to_none=True)
+                return
+            
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config["grad_clip"]
             )
