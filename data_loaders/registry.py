@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from data_loaders.base import DatasetConfig
 from data_loaders.pretraining import PretrainingLoader
 from data_loaders.supervised import SFTLoader
+from data_loaders.scraper import ScrapedDataLoader
 
 
 @dataclass
@@ -56,6 +57,10 @@ PRETRAINING_DATASETS: Dict[str, DatasetInfo] = {
         subset="fineweb-edu-dedup",
         description="Deduplicated web samples",
     ),
+    "custom-scrape": DatasetInfo(
+        dataset_key="scraped-dataset",
+        description="Custom dataset scraped from predefined URLs",
+    ),
 }
 
 SFT_DATASETS: Dict[str, DatasetInfo] = {
@@ -78,7 +83,7 @@ def get_pretraining_loader(
     test_size: float = 0.001,
     seed: int = 42,
     streaming: bool = True,
-) -> PretrainingLoader:
+) -> PretrainingLoader | ScrapedDataLoader:
     """
     Get a pretraining data loader.
 
@@ -119,7 +124,10 @@ def get_pretraining_loader(
             f"Available: {list(PRETRAINING_DATASETS.keys())}"
         )
 
-    return PretrainingLoader(config, streaming=streaming)
+    if config.dataset_key == "scraped-dataset":
+        return ScrapedDataLoader(config)
+    else:
+        return PretrainingLoader(config, streaming=streaming)
 
 
 def get_sft_loader(
