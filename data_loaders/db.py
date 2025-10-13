@@ -1,3 +1,5 @@
+import os
+
 URL_LIST = [
     "https://situational-awareness.ai/wp-content/uploads/2024/06/situationalawareness.pdf",
     "https://i.4pcdn.org/tg/1439541465764.pdf", # dune
@@ -125,3 +127,5 @@ MATH_BOOKS = [
     "https://blngcc.wordpress.com/wp-content/uploads/2008/11/2-kevin-houston-how-to-think-like-a-mathematician.pdf", # how to think like a mathematician
     "https://www.cimat.mx/ciencia_para_jovenes/bachillerato/libros/[Kiselev,Givental]Kiselev's_Geom1.pdf", # kiselev geometry
 ]
+
+LOCAL_TXT_FILES = [os.path.abspath(fp) for fp in os.listdir("data_loaders/files") if fp.endswith(".txt")]

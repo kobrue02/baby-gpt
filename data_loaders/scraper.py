@@ -10,7 +10,7 @@ from PyPDF2 import PdfReader
 
 from data_loaders.base import BaseDatasetLoader, DatasetConfig
 from data_loaders.utils import process, split_dataset_in_memory
-from data_loaders.db import URL_LIST, BLOG_POSTS, ILYA_RECS, MATH_BOOKS
+from data_loaders.db import URL_LIST, BLOG_POSTS, ILYA_RECS, MATH_BOOKS, LOCAL_TXT_FILES
 
 import requests
 import trafilatura
@@ -42,18 +42,22 @@ headers = {
 class ScrapedDataLoader(BaseDatasetLoader):
     """Loader for web-scraped datasets."""
 
-    def __init__(self, config: DatasetConfig):
+    def __init__(self, config: DatasetConfig, include_local_files: bool = False):
         """
         Initialize the loader.
 
         Args:
             config: Dataset configuration
+            include_local_files: Whether to include local .txt files (for foundation stage)
         """
         super().__init__(config)
+        # sources of data
         self.url_list = URL_LIST
         self.blog_posts = BLOG_POSTS
         self.ilya_recs = ILYA_RECS
         self.math_books = MATH_BOOKS
+        self.local_txt_files = LOCAL_TXT_FILES if include_local_files else []
+        # requests session for connection pooling
         self.session = requests.Session()
         self.session.headers.update(headers)
 
@@ -67,6 +71,11 @@ class ScrapedDataLoader(BaseDatasetLoader):
             for page in reader.pages:
                 text += page.extract_text() + "\n"
         return text
+    
+    def _load_local_txt_file(self, file_path: str) -> str:
+        """ Load text content from a local .txt file """
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
     
     def _get_content_from_text_url(self, url: str) -> str:
         """ Extract text content from a plain text URL """
@@ -103,6 +112,12 @@ class ScrapedDataLoader(BaseDatasetLoader):
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
+        for file_path in tqdm(self.local_txt_files):
+            try:
+                text = self._load_local_txt_file(file_path)
+                full_text += text + "\n"
+            except Exception as e:
+                tqdm.write(f"Failed to load {file_path}: {e}")
         return full_text
         
     def load_dataset(self) -> DatasetDict:
@@ -130,18 +145,24 @@ class ScrapedDataLoader(BaseDatasetLoader):
         )
         return tokenized
 
-    def create_dataset(self, output_suffix: str):
+    def create_dataset(self, output_suffix: str, stage: Optional[str] = None):
         """
         Main method to create and save the dataset.
+
+        Args:
+            output_suffix: suffix for the dataset (e.g., 'pretrain')
+            stage: optional curriculum stage name (e.g., 'foundation', 'pretrain')
         """
         from data_loaders.utils import to_bins
 
         print("Loading scraped dataset from URLs")
+        if stage:
+            print(f"Curriculum stage: {stage}")
         dataset = self.load_dataset()
         processed = self.process_dataset(dataset)
 
-        print(f"Saving to binary files with suffix: {output_suffix}")
-        to_bins(processed, suffix=output_suffix, is_sft=False)
+        print(f"Saving to binary files with suffix: {output_suffix}" + (f" and stage: {stage}" if stage else ""))
+        to_bins(processed, suffix=output_suffix, is_sft=False, stage=stage)
 
         print("Dataset created successfully!")
         return None

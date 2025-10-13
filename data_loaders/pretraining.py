@@ -4,6 +4,7 @@ Pretraining dataset loader.
 
 from datasets import load_dataset, Dataset, DatasetDict
 from tqdm import tqdm
+from typing import Optional
 
 from data_loaders.base import BaseDatasetLoader, DatasetConfig
 from data_loaders.utils import process, clear_console, split_dataset_in_memory, stream_to_bin
@@ -68,11 +69,15 @@ class PretrainingLoader(BaseDatasetLoader):
         )
         return tokenized
 
-    def create_dataset(self, output_suffix: str):
+    def create_dataset(self, output_suffix: str, stage: Optional[str] = None):
         """
         Main method to create and save the dataset.
 
         Supports streaming mode to save disk space.
+
+        Args:
+            output_suffix: suffix for the dataset (e.g., 'pretrain')
+            stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
         """
         from data_loaders.utils import to_bins
 
@@ -83,6 +88,8 @@ class PretrainingLoader(BaseDatasetLoader):
             print(f"Loading {self.config.n_items} items")
         else:
             print("Loading full dataset")
+        if stage:
+            print(f"Curriculum stage: {stage}")
 
         # Use streaming mode by default unless explicitly disabled
         if self.streaming:
@@ -107,6 +114,7 @@ class PretrainingLoader(BaseDatasetLoader):
                 suffix=output_suffix,
                 test_size=self.config.test_size,
                 seed=self.config.seed,
+                stage=stage,
             )
 
             print("Dataset created successfully!")
@@ -117,8 +125,8 @@ class PretrainingLoader(BaseDatasetLoader):
             dataset = self.load_dataset()
             processed = self.process_dataset(dataset)
 
-            print(f"Saving to binary files with suffix: {output_suffix}")
-            to_bins(processed, suffix=output_suffix, is_sft=(output_suffix == "sft"))
+            print(f"Saving to binary files with suffix: {output_suffix}" + (f" and stage: {stage}" if stage else ""))
+            to_bins(processed, suffix=output_suffix, is_sft=(output_suffix == "sft"), stage=stage)
 
             print("Dataset created successfully!")
 

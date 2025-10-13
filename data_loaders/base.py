@@ -34,8 +34,13 @@ class BaseDatasetLoader(ABC):
         """Process and tokenize the dataset."""
         pass
 
-    def create_dataset(self, output_suffix: str):
-        """Main method to create and save the dataset."""
+    def create_dataset(self, output_suffix: str, stage: Optional[str] = None):
+        """Main method to create and save the dataset.
+
+        Args:
+            output_suffix: suffix for the dataset (e.g., 'pretrain', 'sft')
+            stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
+        """
         from data_loaders.utils import to_bins
 
         print(f"Loading dataset: {self.config.dataset_key}")
@@ -43,12 +48,14 @@ class BaseDatasetLoader(ABC):
             print(f"Using subset: {self.config.subset}")
         if self.config.n_items:
             print(f"Loading {self.config.n_items} items")
+        if stage:
+            print(f"Curriculum stage: {stage}")
 
         dataset = self.load_dataset()
         processed = self.process_dataset(dataset)
 
-        print(f"Saving to binary files with suffix: {output_suffix}")
-        to_bins(processed, suffix=output_suffix, is_sft=(output_suffix == "sft"))
+        print(f"Saving to binary files with suffix: {output_suffix}" + (f" and stage: {stage}" if stage else ""))
+        to_bins(processed, suffix=output_suffix, is_sft=(output_suffix == "sft"), stage=stage)
 
         print("Dataset created successfully!")
         return processed

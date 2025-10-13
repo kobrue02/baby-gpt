@@ -1,0 +1,147 @@
+COMMON SENSE COMPENDIUM
+Based on ideas inspired by Yann LeCun’s arguments about implicit knowledge.
+
+---
+PART I: THE PHYSICAL WORLD
+
+Objects exist continuously in space and time. They do not appear or disappear without cause. 
+A solid object cannot occupy the same space as another solid object. If two solid objects collide, they resist interpenetration. 
+Objects fall toward the ground if unsupported. Gravity pulls objects downward unless something holds them up. 
+Heavier objects are harder to lift. Lighter objects are easier to move. 
+Fragile objects can break if dropped or hit with force. 
+Sharp objects can cut or pierce softer materials. 
+Hot things can burn skin. Cold things can freeze or stiffen materials. 
+Liquids flow and take the shape of their containers. Gases expand to fill available space. 
+Fire consumes fuel and produces heat and light. 
+Smoke usually rises because it is made of hot air and particles. 
+
+Time moves forward. Events happen in sequence. The past cannot be changed. The future can be influenced by present actions. 
+When something is moved, it changes location. When it stops moving, it stays where it is unless acted upon again. 
+Friction slows down moving objects that touch surfaces. 
+If something is pushed, it tends to move in the direction of the push. 
+If something is pulled, it moves toward the pull. 
+Energy can be stored, transferred, and used to make things happen. 
+
+---
+PART II: THE LIVING WORLD
+
+Living things grow, consume energy, and can reproduce. 
+Plants need sunlight, water, and nutrients from soil to live. 
+Animals need food, water, and air to survive. 
+Humans are animals with complex social behavior and advanced reasoning. 
+People get tired and must rest. Sleep restores energy. 
+If someone doesn’t eat or drink for a long time, they become weak and can die. 
+Humans can feel pleasure, pain, hunger, thirst, and fear. 
+People usually avoid pain and seek comfort and safety. 
+Illness can make people weak or unable to work. 
+Health improves with proper food, rest, and hygiene. 
+
+Children depend on adults for care and learning. 
+Adults protect and teach younger people. 
+Old age can bring weakness or forgetfulness. 
+Death is irreversible. Living things that die do not come back. 
+
+Animals react to threats by running away or fighting. 
+Predators eat prey. Prey avoid predators. 
+Domesticated animals often rely on humans for food and shelter. 
+
+---
+PART III: THE SOCIAL WORLD
+
+Humans are social creatures. They live in groups, families, and communities. 
+Communication helps people cooperate and share goals. 
+Spoken language, writing, and gestures convey information and emotion. 
+Politeness helps maintain harmony in groups. 
+Rudeness or aggression can cause conflict. 
+People trust others who behave consistently and keep promises. 
+Breaking a promise damages trust. 
+Apologies can repair social relationships. 
+
+People often help each other when cooperation benefits everyone. 
+Sharing food or information can strengthen bonds. 
+Greed or selfishness can cause resentment. 
+Leadership arises when some people guide others toward common goals. 
+Rules and laws reduce conflict by setting shared expectations. 
+Justice means fair treatment and accountability. 
+Lies can protect or harm others, depending on intent. 
+Telling the truth builds long-term trust. 
+
+Emotions guide behavior. Happiness signals satisfaction. Anger signals frustration or threat. 
+Fear helps avoid danger. Sadness often follows loss. 
+Empathy helps one understand how others feel. 
+Kindness and generosity make social life smoother and safer. 
+
+---
+PART IV: THE COGNITIVE WORLD
+
+Humans learn by observing, experimenting, and remembering. 
+Mistakes teach lessons that improve future behavior. 
+Attention focuses thought on relevant details. 
+Distraction reduces performance. 
+People forget things over time, especially details that seem unimportant. 
+Language allows thought to be shared and refined. 
+Memory is fallible; people sometimes misremember or confuse events. 
+
+People can plan by imagining future outcomes and choosing actions that lead toward goals. 
+Curiosity drives exploration and discovery. 
+Understanding cause and effect helps predict outcomes. 
+People infer hidden causes from patterns they see. 
+Coincidence does not always mean causation. 
+
+Beliefs shape perception. Expectations influence how experiences are interpreted. 
+Strong emotions can bias judgment. 
+People often simplify complex information to make quick decisions. 
+Overconfidence can lead to mistakes. 
+
+---
+PART V: THE BUILT ENVIRONMENT
+
+Humans create tools to extend their abilities. 
+A hammer amplifies the force of a hand strike. A knife cuts better than fingernails. 
+Machines use energy to perform tasks repeatedly or with more power than humans alone. 
+Electricity powers lights, computers, and many household tools. 
+Vehicles transport people and goods faster than walking. 
+Roads, bridges, and buildings form infrastructure that enables cities to function. 
+Shelter protects from rain, heat, and cold. 
+Clothing protects the body and signals identity. 
+
+Money serves as a common measure of value and medium of exchange. 
+Work provides income and purpose. 
+Time is often divided into schedules and routines. 
+People rest on weekends or holidays to recover from effort. 
+
+Technology evolves through cumulative innovation. 
+Each generation inherits tools and knowledge from the past. 
+New inventions solve problems but may also create new risks. 
+Complex systems require maintenance. Neglect leads to breakdown. 
+
+---
+PART VI: META-REASONING AND HUMAN NATURE
+
+Humans try to understand the world by forming mental models. 
+Models are simplified representations of reality that allow prediction and reasoning. 
+A model that predicts well is useful even if incomplete. 
+Experience updates models over time. 
+Learning never ends because the world changes. 
+
+Curiosity, play, and experimentation are natural learning strategies. 
+Children learn by imitation and trial and error. 
+Feedback strengthens good habits and discourages harmful ones. 
+People can teach others, transmitting knowledge beyond direct experience. 
+Cultural memory accumulates across generations. 
+
+Common sense is the ability to use experience and background knowledge to judge what is reasonable or likely. 
+It allows humans to fill gaps in incomplete information. 
+It is rarely written because it feels obvious to those who share it. 
+Machines trained only on text may miss much of this implicit structure. 
+
+To achieve human-like understanding, a system must model the world itself — not only the words people use to describe it. 
+Perception, prediction, and action create grounded meaning. 
+Embodied learning connects symbols to real causes and effects. 
+Without grounding, words are only shadows of experience. 
+
+Human wisdom comes from integrating perception, memory, emotion, and reasoning. 
+Language reflects understanding but does not replace it. 
+Common sense is the invisible framework that makes communication possible. 
+It lives in every human mind, shaped by a lifetime of experience with the physical and social world. 
+Recording it explicitly, as done here, makes visible what usually remains implicit.

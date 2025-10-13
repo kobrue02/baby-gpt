@@ -28,6 +28,7 @@ class TrainingState:
     observed_tokens_count: int
     predicted_tokens_count: int
     current_loss: float = 0.0
+    curriculum_stage_idx: Optional[int] = None  # Index of the current curriculum stage, if applicable
 
     @classmethod
     def from_checkpoint(cls, checkpoint: dict, model: Transformer, raw_model, optimizer, scaler, scheduler=None) -> "TrainingState":
@@ -54,6 +55,7 @@ class TrainingState:
         config = checkpoint.get("config", {})
         lr = config.get("learning_rate", 0.0)
         current_loss = checkpoint.get("current_loss", 0.0)
+        curriculum_stage_idx = checkpoint.get("curriculum_stage_idx", None)
 
         return cls(
             model=model,
@@ -71,6 +73,7 @@ class TrainingState:
             observed_tokens_count=observed_tokens_count,
             predicted_tokens_count=predicted_tokens_count,
             current_loss=current_loss,
+            curriculum_stage_idx=curriculum_stage_idx,
         )
 
     def to_checkpoint_dict(self) -> dict:
@@ -86,6 +89,7 @@ class TrainingState:
             "observed_tokens_count": self.observed_tokens_count,
             "predicted_tokens_count": self.predicted_tokens_count,
             "current_loss": self.current_loss,
+            "curriculum_stage_idx": self.curriculum_stage_idx,
         }
         # Save scheduler state if available
         if self.scheduler is not None:

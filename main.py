@@ -116,6 +116,113 @@ def initialize_pretraining(
         raise typer.Exit(1)
 
 
+@initialize_app.command("curriculum")
+def initialize_curriculum(
+    curriculum_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            "-t",
+            help="Curriculum type: 'default' (3 stages), 'simple' (2 stages), or 'custom' (from config file)"
+        ),
+    ] = "simple",
+    no_streaming: Annotated[
+        bool,
+        typer.Option(
+            "--no-streaming",
+            help="Disable streaming mode (uses more disk space but may be faster for small datasets)",
+        ),
+    ] = False,
+):
+    """
+    Initialize all datasets for curriculum learning.
+
+    This command downloads and processes all datasets for each stage
+    in the curriculum, creating binary files with stage-specific names.
+
+    Examples:
+        # Create simple 2-stage curriculum (warmup + pretrain)
+        python main.py initialize curriculum --type simple
+
+        # Create default 3-stage curriculum (warmup + foundation + pretrain)
+        python main.py initialize curriculum --type default
+    """
+    from data_loaders.curriculum import Curriculum
+    from data_loaders.pretraining import PretrainingLoader
+    from data_loaders.base import DatasetConfig
+
+    # Create curriculum based on type
+    if curriculum_type == "simple":
+        curriculum = Curriculum.create_simple()
+    elif curriculum_type == "default":
+        curriculum = Curriculum.create_default()
+    else:
+        typer.secho(
+            f"Error: Unknown curriculum type '{curriculum_type}'. Use 'simple' or 'default'",
+            fg=typer.colors.RED,
+            bold=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"\nInitializing curriculum with {len(curriculum.stages)} stages...")
+    typer.echo("=" * 60)
+
+    for stage_idx, stage in enumerate(curriculum.stages):
+        typer.secho(
+            f"\n[Stage {stage_idx + 1}/{len(curriculum.stages)}] {stage.name}",
+            fg=typer.colors.CYAN,
+            bold=True,
+        )
+        typer.echo(f"  Dataset: {stage.dataset_key}")
+        typer.echo(f"  Block size: {stage.block_size}")
+        typer.echo(f"  Epochs: {stage.n_epochs}")
+        if stage.n_items:
+            typer.echo(f"  Items: {stage.n_items:,}")
+
+        try:
+            # Create dataset config
+            config = DatasetConfig(
+                dataset_key=stage.dataset_key,
+                n_items=stage.n_items,
+                test_size=0.001,
+                seed=42,
+            )
+
+            # Create appropriate loader based on dataset_key
+            if stage.dataset_key == "custom-scrape":
+                from data_loaders.scraper import ScrapedDataLoader
+                loader = ScrapedDataLoader(config, include_local_files=False)
+            elif stage.dataset_key == "local-files":
+                from data_loaders.local_files import LocalFilesLoader
+                loader = LocalFilesLoader(config)
+            else:
+                # Standard HuggingFace dataset
+                loader = PretrainingLoader(config, streaming=not no_streaming)
+
+            # Create and save dataset with stage name
+            loader.create_dataset(output_suffix=stage.dataset_suffix, stage=stage.name)
+
+            typer.secho(
+                f"  ✓ Stage '{stage.name}' dataset created successfully!",
+                fg=typer.colors.GREEN,
+            )
+
+        except Exception as e:
+            typer.secho(
+                f"  ✗ Error creating dataset for stage '{stage.name}': {e}",
+                fg=typer.colors.RED,
+                bold=True,
+            )
+            raise typer.Exit(1)
+
+    typer.echo("\n" + "=" * 60)
+    typer.secho(
+        "All curriculum datasets initialized successfully!",
+        fg=typer.colors.GREEN,
+        bold=True,
+    )
+
+
 @initialize_app.command("sft")
 def initialize_sft(
     dataset: Annotated[
@@ -233,6 +340,51 @@ def start_pretraining():
     trainer.train()
 
 
+@resume_app.command("curriculum")
+def resume_curriculum(
+    curriculum_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            "-t",
+            help="Curriculum type: 'default' (3 stages), 'simple' (2 stages)"
+        ),
+    ] = "simple",
+):
+    """
+    Resume curriculum learning from the latest checkpoint.
+
+    This command loads the most recent checkpoint and continues
+    curriculum training from where it left off.
+
+    Examples:
+        # Resume simple curriculum training
+        python main.py resume curriculum --type simple
+
+        # Resume default curriculum training
+        python main.py resume curriculum --type default
+    """
+    from data_loaders.curriculum import Curriculum
+    from training.pretraining.curriculum_trainer import CurriculumTrainer
+
+    # Create curriculum based on type
+    if curriculum_type == "simple":
+        curriculum = Curriculum.create_simple()
+    elif curriculum_type == "default":
+        curriculum = Curriculum.create_default()
+    else:
+        typer.secho(
+            f"Error: Unknown curriculum type '{curriculum_type}'. Use 'simple' or 'default'",
+            fg=typer.colors.RED,
+            bold=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo("Resuming curriculum training from checkpoint...")
+    trainer = CurriculumTrainer(curriculum=curriculum, resume=True)
+    trainer.train()
+
+
 @resume_app.command("sft")
 def resume_sft():
     """
@@ -245,6 +397,51 @@ def resume_sft():
 
     typer.echo("Resuming SFT from checkpoint...")
     trainer = SFTTrainer(resume=True)
+    trainer.train()
+
+
+@start_app.command("curriculum")
+def start_curriculum(
+    curriculum_type: Annotated[
+        str,
+        typer.Option(
+            "--type",
+            "-t",
+            help="Curriculum type: 'default' (3 stages), 'simple' (2 stages)"
+        ),
+    ] = "simple",
+):
+    """
+    Start curriculum learning from scratch.
+
+    This command trains the model through multiple stages with
+    progressively more complex data and longer contexts.
+
+    Examples:
+        # Train with simple 2-stage curriculum
+        python main.py start curriculum --type simple
+
+        # Train with default 3-stage curriculum
+        python main.py start curriculum --type default
+    """
+    from data_loaders.curriculum import Curriculum
+    from training.pretraining.curriculum_trainer import CurriculumTrainer
+
+    # Create curriculum based on type
+    if curriculum_type == "simple":
+        curriculum = Curriculum.create_simple()
+    elif curriculum_type == "default":
+        curriculum = Curriculum.create_default()
+    else:
+        typer.secho(
+            f"Error: Unknown curriculum type '{curriculum_type}'. Use 'simple' or 'default'",
+            fg=typer.colors.RED,
+            bold=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"Starting curriculum training with {len(curriculum.stages)} stages...")
+    trainer = CurriculumTrainer(curriculum=curriculum, resume=False)
     trainer.train()
 
 

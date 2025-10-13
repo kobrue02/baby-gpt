@@ -126,14 +126,25 @@ def process_sft(examples):
 
 
 
-def memmap(split, dset, dtype, suffix=""):
+def memmap(split, dset, dtype, suffix="", stage=None):
     """
     Take a tokenized dataset and save to binary files.
+
+    Args:
+        split: 'train' or 'val'
+        dset: Dataset with 'ids' and 'len' columns
+        dtype: numpy dtype for the binary file
+        suffix: suffix for the file (e.g., 'pretrain', 'sft')
+        stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
     """
     data_directory = os.path.join(os.path.dirname(__file__), "../data")
     data_directory = os.path.abspath(data_directory)
     arr_len = np.sum(dset["len"], dtype=np.uint64)  # type: ignore
-    if suffix == "":
+
+    # Build filename with optional stage
+    if stage:
+        filename = os.path.join(data_directory, f"{split}_{stage}_{suffix}.bin")
+    elif suffix == "":
         filename = os.path.join(data_directory, f"{split}.bin")
     else:
         filename = os.path.join(data_directory, f"{split}_{suffix}.bin")
@@ -153,19 +164,32 @@ def memmap(split, dset, dtype, suffix=""):
     return arr
 
 
-def memmap_sft(split, dset, dtype, suffix="sft"):
+def memmap_sft(split, dset, dtype, suffix="sft", stage=None):
     """
     Take a tokenized dataset and save to binary files for tokens and masks.
+
+    Args:
+        split: 'train' or 'val'
+        dset: Dataset with 'ids', 'mask', and 'len' columns
+        dtype: numpy dtype for the binary file
+        suffix: suffix for the file (e.g., 'sft')
+        stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
     """
     data_directory = os.path.join(os.path.dirname(__file__), "../data")
     data_directory = os.path.abspath(data_directory)
     arr_len = np.sum(dset["len"], dtype=np.uint64)
-    token_file = os.path.join(
-        data_directory, f'{split}{"" if suffix=="" else "_"+suffix}.bin'
-    )
-    mask_file = os.path.join(
-        data_directory, f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin'
-    )
+
+    # Build filenames with optional stage
+    if stage:
+        token_file = os.path.join(data_directory, f'{split}_{stage}_{suffix}.bin')
+        mask_file = os.path.join(data_directory, f'{split}_{stage}_{suffix}_mask.bin')
+    else:
+        token_file = os.path.join(
+            data_directory, f'{split}{"" if suffix=="" else "_"+suffix}.bin'
+        )
+        mask_file = os.path.join(
+            data_directory, f'{split}{"" if suffix=="" else "_"+suffix}_mask.bin'
+        )
 
     tokens = np.memmap(token_file, dtype=dtype, mode="w+", shape=(arr_len,))  # type: ignore
     masks = np.memmap(mask_file, dtype=np.uint8, mode="w+", shape=(arr_len,))  # type: ignore
@@ -186,9 +210,15 @@ def memmap_sft(split, dset, dtype, suffix="sft"):
     return tokens, masks
 
 
-def to_bins(tokenized, suffix="", is_sft=False):
+def to_bins(tokenized, suffix="", is_sft=False, stage=None):
     """
     Take a tokenized dataset and save to binary files.
+
+    Args:
+        tokenized: DatasetDict with 'train' and 'val' splits
+        suffix: suffix for the file (e.g., 'pretrain', 'sft')
+        is_sft: whether this is an SFT dataset (with masks)
+        stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
     """
     dtype = np.uint16  # (can do since enc.max_token_value == 50256 is < 2**16)
 
@@ -198,10 +228,10 @@ def to_bins(tokenized, suffix="", is_sft=False):
 
     for split, dset in tokenized.items():  # type: ignore
         if is_sft:
-            tokens, masks = memmap_sft(split, dset, dtype, suffix)
+            tokens, masks = memmap_sft(split, dset, dtype, suffix, stage=stage)
             masks.flush()
         else:
-            tokens = memmap(split, dset, dtype, suffix)
+            tokens = memmap(split, dset, dtype, suffix, stage=stage)
         # flush to disk
         tokens.flush()
 
@@ -232,7 +262,7 @@ def clear_console():
         os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001, seed=42, process_fn=None):
+def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001, seed=42, process_fn=None, stage=None):
     """
     Stream dataset directly to binary files without caching.
 
@@ -245,6 +275,7 @@ def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001,
         test_size: Proportion for validation split
         seed: Random seed
         process_fn: Function to process each example (defaults to process())
+        stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
     """
     if process_fn is None:
         process_fn = process
@@ -255,9 +286,13 @@ def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001,
 
     dtype = np.uint16
 
-    # Open binary files for writing
-    train_file = os.path.join(data_directory, f"train_{suffix}.bin")
-    val_file = os.path.join(data_directory, f"val_{suffix}.bin")
+    # Open binary files for writing with optional stage
+    if stage:
+        train_file = os.path.join(data_directory, f"train_{stage}_{suffix}.bin")
+        val_file = os.path.join(data_directory, f"val_{stage}_{suffix}.bin")
+    else:
+        train_file = os.path.join(data_directory, f"train_{suffix}.bin")
+        val_file = os.path.join(data_directory, f"val_{suffix}.bin")
 
     print(f"Streaming to {train_file} and {val_file}...")
 
@@ -326,7 +361,7 @@ def stream_to_bin(iterable_dataset, n_items, suffix="pretrain", test_size=0.001,
     return train_file, val_file
 
 
-def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, seed=42):
+def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, seed=42, stage=None):
     """
     Stream SFT dataset directly to binary files without caching.
 
@@ -338,6 +373,7 @@ def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, se
         suffix: Suffix for output files
         test_size: Proportion for validation split
         seed: Random seed
+        stage: optional curriculum stage name (e.g., 'warmup', 'foundation')
     """
     data_directory = os.path.join(os.path.dirname(__file__), "../data")
     data_directory = os.path.abspath(data_directory)
@@ -355,11 +391,17 @@ def stream_to_bin_sft(iterable_dataset, n_items, suffix="sft", test_size=0.1, se
     rng.shuffle(indices)
     val_indices = set(indices[:n_val].tolist())
 
-    # Open binary files for writing
-    train_token_file = os.path.join(data_directory, f"train_{suffix}.bin")
-    train_mask_file = os.path.join(data_directory, f"train_{suffix}_mask.bin")
-    val_token_file = os.path.join(data_directory, f"val_{suffix}.bin")
-    val_mask_file = os.path.join(data_directory, f"val_{suffix}_mask.bin")
+    # Open binary files for writing with optional stage
+    if stage:
+        train_token_file = os.path.join(data_directory, f"train_{stage}_{suffix}.bin")
+        train_mask_file = os.path.join(data_directory, f"train_{stage}_{suffix}_mask.bin")
+        val_token_file = os.path.join(data_directory, f"val_{stage}_{suffix}.bin")
+        val_mask_file = os.path.join(data_directory, f"val_{stage}_{suffix}_mask.bin")
+    else:
+        train_token_file = os.path.join(data_directory, f"train_{suffix}.bin")
+        train_mask_file = os.path.join(data_directory, f"train_{suffix}_mask.bin")
+        val_token_file = os.path.join(data_directory, f"val_{suffix}.bin")
+        val_mask_file = os.path.join(data_directory, f"val_{suffix}_mask.bin")
 
     print(f"Streaming to {train_token_file} and {val_token_file}...")
     print(f"Train examples: {n_train}, Val examples: {n_val}")
