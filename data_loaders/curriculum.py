@@ -36,7 +36,13 @@ class Curriculum:
 
     @classmethod
     def create_default(cls) -> "Curriculum":
-        """Create a default curriculum with warmup, foundation, and pretrain stages."""
+        """
+        Create a default 3-stage curriculum.
+
+        Stage 1 (warmup): TinyStories - simple children's stories
+        Stage 2 (foundation): Local .txt files from data_loaders/files/
+        Stage 3 (pretrain): Web-scraped content (URLs, PDFs, blogs from db.py)
+        """
         return cls(stages=[
             CurriculumStage(
                 name="warmup",
@@ -50,14 +56,14 @@ class Curriculum:
                 name="foundation",
                 dataset_key="local-files",  # Local .txt files
                 block_size=256,
-                n_epochs=2,
+                n_epochs=4,
                 dataset_suffix="pretrain",
             ),
             CurriculumStage(
                 name="pretrain",
                 dataset_key="custom-scrape",  # Web-scraped content
                 block_size=512,
-                n_epochs=3,
+                n_epochs=13,
                 dataset_suffix="pretrain",
             ),
         ])

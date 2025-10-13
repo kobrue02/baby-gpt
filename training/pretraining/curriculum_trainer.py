@@ -70,11 +70,8 @@ class CurriculumTrainer(PreTrainer):
 
     def _setup_curriculum_state(self):
         """Setup curriculum-specific state after initialization."""
-        # Track which stage we're on
-        if hasattr(self, 'training_state'):
-            if not hasattr(self.training_state, 'curriculum_stage_idx'):
-                self.training_state.curriculum_stage_idx = 0
-            self.current_stage_idx = self.training_state.curriculum_stage_idx
+        # Initialize curriculum stage index in training state
+        self.training_state.curriculum_stage_idx = self.current_stage_idx
 
     def _get_stage_dataset_files(self, split: str) -> str:
         """
@@ -282,35 +279,35 @@ class CurriculumTrainer(PreTrainer):
     def save_checkpoint(self):
         """Save checkpoint with curriculum stage information."""
         assert self.current_stage is not None, "Current stage not set"
-        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
-        assert isinstance(self.current_stage, CurriculumStage), "Current stage invalid"
-        
-        # Add curriculum stage info to the checkpoint
-        if hasattr(self.training_state, 'curriculum_stage_idx'):
-            checkpoint_dict = self.training_state.to_checkpoint_dict()
-            checkpoint_dict['curriculum_stage_idx'] = self.current_stage_idx
-        else:
-            checkpoint_dict = self.training_state.to_checkpoint_dict()
 
-        if hasattr(self, 'pbar'):
+        # Get checkpoint dict and add curriculum stage info
+        checkpoint_dict = self.training_state.to_checkpoint_dict()
+        checkpoint_dict['curriculum_stage_idx'] = self.current_stage_idx
+
+        try:
             self.pbar.set_postfix_str(
                 f"saving checkpoint (stage {self.current_stage.name}) to {self.config['out_dir']}"
             )
+        except AttributeError:
+            pass
 
         self._atomic_save_checkpoint(checkpoint_dict)
 
     def load_checkpoint(self):
         """Load checkpoint and restore curriculum stage."""
-        super().load_checkpoint()
-        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
-        
-        # Restore curriculum stage from checkpoint
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
         if os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path, map_location=self.device_type)
+
+            # Restore curriculum stage before calling parent load
             if 'curriculum_stage_idx' in checkpoint:
                 self.current_stage_idx = checkpoint['curriculum_stage_idx']
-                self.training_state.curriculum_stage_idx = self.current_stage_idx
                 self.current_stage = self.curriculum.stages[self.current_stage_idx]
-                assert self.current_stage is not None, "Current stage not set after loading"
-                print(f"Resumed at curriculum stage: {self.current_stage.name}")
+
+                # Update config for this stage
+                assert self.current_stage is not None, "Current stage not set"
+                self._apply_stage_config(self.current_stage)
+                print(f"Resuming at curriculum stage: {self.current_stage.name}")
+
+        # Now load the rest of the checkpoint
+        super().load_checkpoint()
