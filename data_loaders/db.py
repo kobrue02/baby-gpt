@@ -128,4 +128,4 @@ MATH_BOOKS = [
     "https://www.cimat.mx/ciencia_para_jovenes/bachillerato/libros/[Kiselev,Givental]Kiselev's_Geom1.pdf", # kiselev geometry
 ]
 
-LOCAL_TXT_FILES = [os.path.abspath(fp) for fp in os.listdir("data_loaders/files/") if fp.endswith(".txt")]
+LOCAL_TXT_FILES = [os.path.abspath("data_loaders/files/" + fp) for fp in os.listdir("data_loaders/files/") if fp.endswith(".txt")]
