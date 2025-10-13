@@ -156,6 +156,10 @@ class CurriculumTrainer(PreTrainer):
         Returns:
             True if transitioned to a new stage, False if curriculum is complete
         """
+        assert self.current_stage_idx is not None, "Current stage index not set"
+        assert self.current_stage is not None, "Current stage not set"
+        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
+        assert isinstance(self.current_stage, CurriculumStage), "Current stage invalid"
         self.current_stage_idx += 1
 
         if self.current_stage_idx >= len(self.curriculum.stages):
@@ -210,7 +214,12 @@ class CurriculumTrainer(PreTrainer):
         """
         print(f"\nStarting curriculum training with {len(self.curriculum.stages)} stages")
         print("=" * 60)
-
+        
+        assert self.current_stage_idx is not None, "Current stage index not set"
+        assert self.current_stage is not None, "Current stage not set"
+        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
+        assert isinstance(self.current_stage, CurriculumStage), "Current stage invalid"
+        
         for stage_idx, stage in enumerate(self.curriculum.stages):
             # Skip stages we've already completed (when resuming)
             if stage_idx < self.current_stage_idx:
@@ -272,6 +281,10 @@ class CurriculumTrainer(PreTrainer):
 
     def save_checkpoint(self):
         """Save checkpoint with curriculum stage information."""
+        assert self.current_stage is not None, "Current stage not set"
+        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
+        assert isinstance(self.current_stage, CurriculumStage), "Current stage invalid"
+        
         # Add curriculum stage info to the checkpoint
         if hasattr(self.training_state, 'curriculum_stage_idx'):
             checkpoint_dict = self.training_state.to_checkpoint_dict()
@@ -289,7 +302,8 @@ class CurriculumTrainer(PreTrainer):
     def load_checkpoint(self):
         """Load checkpoint and restore curriculum stage."""
         super().load_checkpoint()
-
+        assert isinstance(self.curriculum, Curriculum), "Curriculum not set"
+        
         # Restore curriculum stage from checkpoint
         checkpoint_path = os.path.join(self.config["out_dir"], "ckpt.pt")
         if os.path.exists(checkpoint_path):
@@ -298,4 +312,5 @@ class CurriculumTrainer(PreTrainer):
                 self.current_stage_idx = checkpoint['curriculum_stage_idx']
                 self.training_state.curriculum_stage_idx = self.current_stage_idx
                 self.current_stage = self.curriculum.stages[self.current_stage_idx]
+                assert self.current_stage is not None, "Current stage not set after loading"
                 print(f"Resumed at curriculum stage: {self.current_stage.name}")
