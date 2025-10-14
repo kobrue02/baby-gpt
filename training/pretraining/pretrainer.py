@@ -117,6 +117,7 @@ class PreTrainer(Trainer):
             batch_process_time=float("nan"),
             lr=lr,
             iter_num=0,
+            stage_iter_num=0,
             best_val_loss=float("inf"),
             config=self.config,
             wandb_run_id=None,  # Will be set by setup_logging if needed
@@ -498,6 +499,7 @@ class PreTrainer(Trainer):
         for batch_idx in range(self._batches_per_epoch):
             self._batch_idx = batch_idx
             self.training_state.iter_num += 1
+            self.training_state.stage_iter_num += 1
             # evaluate periodically
             if (
                 self.training_state.iter_num % self.config["eval_interval"] == 0

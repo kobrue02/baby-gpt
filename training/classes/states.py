@@ -20,6 +20,7 @@ class TrainingState:
         scheduler: Optional[Any] # old PyTorch version
     epoch: int
     iter_num: int
+    stage_iter_num: int  # Iteration number within the current curriculum stage (resets on stage transition)
     batch_process_time: Optional[float]
     lr: float
     best_val_loss: float
@@ -48,6 +49,7 @@ class TrainingState:
 
         epoch = checkpoint.get("epoch", 0)
         iter_num = checkpoint.get("iter_num", 0)
+        stage_iter_num = checkpoint.get("stage_iter_num", 0)
         best_val_loss = checkpoint["best_val_loss"]
         observed_tokens_count = checkpoint.get("observed_tokens_count", 0)
         predicted_tokens_count = checkpoint.get("predicted_tokens_count", 0)
@@ -65,6 +67,7 @@ class TrainingState:
             scheduler=scheduler,
             epoch=epoch,
             iter_num=iter_num,
+            stage_iter_num=stage_iter_num,
             batch_process_time=None,
             lr=lr,
             best_val_loss=best_val_loss,
@@ -83,6 +86,7 @@ class TrainingState:
             "optimizer": self.optimizer.state_dict(),
             "epoch": self.epoch,
             "iter_num": self.iter_num,
+            "stage_iter_num": self.stage_iter_num,
             "best_val_loss": self.best_val_loss,
             "config": self.config,
             "wandb_run_id": self.wandb_run_id,
@@ -101,6 +105,7 @@ class TrainingState:
             "train/batch_process_time": self.batch_process_time if self.batch_process_time is not None else float("nan"),
             "train/learning_rate": self.lr,
             "train/iter_num": self.iter_num,
+            "train/stage_iter_num": self.stage_iter_num,
             "train/epoch": self.epoch,
             "train/observed_tokens": self.observed_tokens_count,
             "train/predicted_tokens": self.predicted_tokens_count,

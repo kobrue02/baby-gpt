@@ -187,8 +187,9 @@ class CurriculumTrainer(PreTrainer):
         self._calculate_batches_per_epoch()
         self._validate_and_adjust_intervals()
 
-        # Reset epoch counter for this stage
+        # Reset epoch counter and stage iteration counter for this stage
         self.training_state.epoch = 0
+        self.training_state.stage_iter_num = 0
         self.training_state.curriculum_stage_idx = self.current_stage_idx
 
         # Optionally: reinitialize the learning rate schedule for the new stage
@@ -239,7 +240,7 @@ class CurriculumTrainer(PreTrainer):
                 from tqdm import tqdm
                 self.pbar = tqdm(
                     total=self._batches_per_epoch,
-                    initial=self.training_state.iter_num % self._batches_per_epoch,
+                    initial=self.training_state.stage_iter_num % self._batches_per_epoch,
                     desc=f"stage {stage.name} | epoch {epoch+1}/{stage_end_epoch}",
                 )
 
