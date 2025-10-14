@@ -88,31 +88,47 @@ class ScrapedDataLoader(BaseDatasetLoader):
     
     def _load_urls(self) -> str:
         full_text = ""
-        for url in tqdm(self.url_list):
+        pbar = tqdm(total=len(self.url_list) + len(self.blog_posts) + len(self.ilya_recs) + len(self.math_books) + len(self.local_txt_files), desc="Scraping URLs")
+        
+        pbar.set_description_str(f"Online PDF files")
+        for url in self.url_list:
+            pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
+        
+        pbar.set_description_str(f"Blog posts")
         for url in tqdm(self.blog_posts):
+            pbar.update(1)
             try:
                 text = self._get_content_from_text_url(url)
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
+        
+        pbar.set_description_str(f"Ilya's recommendations")
         for url in tqdm(self.ilya_recs):
+            pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
+        
+        pbar.set_description_str(f"Math books")
         for url in tqdm(self.math_books):
+            pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
+        
+        pbar.set_description_str(f"Local .txt files")
         for file_path in tqdm(self.local_txt_files):
+            pbar.update(1)
             try:
                 text = self._load_local_txt_file(file_path)
                 full_text += text + "\n"
