@@ -235,7 +235,12 @@ class CurriculumTrainer(PreTrainer):
             stage_end_epoch = stage.n_epochs
 
             for epoch in range(self.training_state.epoch, stage_end_epoch):
-                self._create_dataloader_indices()
+                try:
+                    self._create_dataloader_indices()
+                except ValueError as e:
+                    print(f"Error creating dataloader indices: {e}")
+                    print("Skipping to next stage.")
+                    break
 
                 from tqdm import tqdm
                 self.pbar = tqdm(
