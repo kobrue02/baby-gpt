@@ -6,7 +6,7 @@ And uses the PackedSwiGLUFFN activation from act.py, instead of the standard GEL
 
 import torch
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from torch import nn
 from abc import ABC, abstractmethod
 from typing import Any
@@ -18,7 +18,7 @@ class TransformerTimeConsumption:
     embedding_time: float = 0.0
     dropout_time: float = 0.0
     hidden_time: float = 0.0
-    block: BlockTimeConsumption = BlockTimeConsumption()
+    block: BlockTimeConsumption = field(default_factory=BlockTimeConsumption)
     layernorm_time: float = 0.0
     lm_head_time: float = 0.0
     total_forward_time: float = 0.0
