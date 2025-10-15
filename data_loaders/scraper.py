@@ -38,6 +38,38 @@ headers = {
     "DNT": "1",  # Do Not Track
 }
 
+def clean_metadata_from_text(text: str) -> str:
+    """ Remove common metadata lines from text """
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        line_strip = line.strip()
+        if (
+            line_strip.startswith("http")
+            or line_strip.startswith("www.")
+            or line_strip.lower().startswith("published by")
+            or line_strip.lower().startswith("published in")
+            or "copyright" in line_strip.lower()
+            or "all rights reserved" in line_strip.lower()
+            or "terms of service" in line_strip.lower()
+            or "privacy policy" in line_strip.lower()
+            or "press preface" in line_strip.lower()
+            or "table of contents" in line_strip.lower()
+            or "acknowledgments" in line_strip.lower()
+            or len(line_strip) < 10  # remove very short lines
+            or line_strip.isupper()  # remove lines that are all uppercase
+            or line_strip.isdigit()  # remove lines that are just numbers
+            or line_strip.lower().startswith("page ") # remove page numbers
+            or line_strip.lower().startswith("chapter ") # remove chapter headings
+            or line_strip.lower().startswith("section ") # remove section headings
+            or line_strip.count(' ') < 2  # remove lines with less than 2 spaces (likely not meaningful)
+            or not any(c.isalnum() for c in line_strip)  # remove lines without alphanumeric characters
+            or line_strip in ["\n", "", "\r"]  # remove empty lines
+        ):
+            continue
+        cleaned_lines.append(line)
+    return " ".join(cleaned_lines).replace("  ", " ").strip()
+
 
 class ScrapedDataLoader(BaseDatasetLoader):
     """Loader for web-scraped datasets."""
@@ -69,13 +101,14 @@ class ScrapedDataLoader(BaseDatasetLoader):
             reader = PdfReader(pdf_file)
             text = ""
             for page in reader.pages:
-                text += page.extract_text() + "\n"
-        return text
+                text += page.extract_text() + "\n\n"
+        return clean_metadata_from_text(text)
     
     def _load_local_txt_file(self, file_path: str) -> str:
         """ Load text content from a local .txt file """
         with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
+            txt = f.read()
+        return clean_metadata_from_text(txt)
     
     def _get_content_from_text_url(self, url: str) -> str:
         """ Extract text content from a plain text URL """
@@ -83,8 +116,10 @@ class ScrapedDataLoader(BaseDatasetLoader):
         text = ""
         # Extract the main content
         if downloaded:
-            text = trafilatura.extract(downloaded)
-        return text or ""
+            text += str(
+                trafilatura.extract(downloaded, include_comments=False, include_tables=False, target_language='en')
+                ) + "\n\n"
+        return clean_metadata_from_text(text)
     
     def _load_urls(self) -> str:
         full_text = ""
@@ -95,6 +130,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
             pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
+                pbar.write(text[:100])  # print first 100 characters for debugging
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
@@ -104,6 +140,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
             pbar.update(1)
             try:
                 text = self._get_content_from_text_url(url)
+                pbar.write(text[:100])  # print first 100 characters for debugging
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
@@ -113,6 +150,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
             pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
+                pbar.write(text[:100])  # print first 100 characters for debugging
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
@@ -122,6 +160,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
             pbar.update(1)
             try:
                 text = self._get_content_from_pdf_url(url)
+                pbar.write(text[:100])  # print first 100 characters for debugging
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {url}: {e}")
@@ -131,6 +170,7 @@ class ScrapedDataLoader(BaseDatasetLoader):
             pbar.update(1)
             try:
                 text = self._load_local_txt_file(file_path)
+                pbar.write(text[:100])  # print first 100 characters for debugging
                 full_text += text + "\n"
             except Exception as e:
                 tqdm.write(f"Failed to load {file_path}: {e}")
