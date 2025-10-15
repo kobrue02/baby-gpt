@@ -263,6 +263,11 @@ class CurriculumTrainer(PreTrainer):
                     if not continue_training:
                         print("Exiting from training due to error.")
                         return
+                
+                except AttributeError as e:
+                    print(f"AttributeError during stage {stage.name}, epoch {epoch+1}: {e}")
+                    print("Skipping to next stage.")
+                    break
 
                 # Save checkpoint at end of epoch
                 if self.config["master_process"]:

@@ -50,12 +50,12 @@ class Curriculum:
                 block_size=128,
                 n_epochs=1,
                 dataset_suffix="pretrain",
-                n_items=1000000  # Small warmup dataset
+                n_items=500000  # Small warmup dataset
             ),
             CurriculumStage(
                 name="foundation",
                 dataset_key="local-files",  # Local .txt files
-                block_size=256,
+                block_size=128,
                 n_epochs=5,
                 dataset_suffix="pretrain",
             ),
